@@ -1,10 +1,10 @@
 # Project Context
 
 ## Purpose
-A web application for managing and analyzing data reports
+A web application for data analysis and reporting
 
 ## Target Users
-Internal analyst users
+Internal analysts and users who need to analyze and visualize data
 
 ## Stack
 - Frontend: Next.js (App Router) + TypeScript
@@ -14,4 +14,4 @@ Internal analyst users
 - Deploy: Vercel
 
 ## Success Criteria
-MVP can run locally and on Vercel
+The MVP can run locally and on Vercel, allowing users to access the application successfully.
