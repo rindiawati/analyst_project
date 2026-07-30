@@ -9,6 +9,7 @@ export default async function Dashboard() {
       <p>
         Login as: {session?.user?.email}
       </p>
+      <button type="button">Logout</button>
     </div>
   );
 }
