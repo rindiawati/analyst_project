@@ -84,8 +84,7 @@ Procedure helpers in `src/server/api/trpc.ts`: `publicProcedure` (session option
 ### REST / Route Handlers
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/api/register` | public | `{ email, password }` → `201 { id, email }`; 400 missing, 409 duplicate email |
-| POST | `/api/activity` | **none** | Stub — echoes body, does not persist. **Deprecated/superseded:** activity handling now goes through the `activities.*` tRPC procedures; this route should be removed. |
+| POST | `/api/register` | public | `{ email, password(min 8) }` → `201 { id, email }`; 400 invalid input (zod-validated), 409 duplicate email. Input schema matches the tRPC `auth.register` procedure. |
 | GET/POST | `/api/auth/*` | — | NextAuth handlers |
 | GET/POST | `/api/trpc/*` | — | tRPC endpoint |
 
@@ -149,7 +148,7 @@ npm run test      # watch mode (vitest)
 npm run check     # eslint . + tsc --noEmit
 npm run typecheck # tsc only
 ```
-Tests are co-located next to source as `*.test.ts` (e.g. `src/lib/streak.test.ts`, `src/server/api/routers/auth.test.ts`). Playwright (e2e) is planned but not yet installed.
+Tests are co-located next to source as `*.test.ts` (e.g. `src/lib/streak.test.ts`, `src/lib/activities.test.ts`). Playwright (e2e) is planned but not yet installed. Empty T3 boilerplate test stubs (`auth.test.ts`, `trpc.test.ts`) were removed — recreate with actual tests when needed.
 
 ## Security (Lab 5 — Build the Shield)
 
@@ -173,4 +172,30 @@ These could not be fixed with non-breaking `npm audit fix` because the vulnerabl
 - 18 pre-existing type-safety lint errors remain in WIP REST handlers (`src/app/api/register/route.ts`, `src/app/api/register/page.tsx`, `src/app/api/activity/route.ts`) — untyped `await request.json()` returning `any`. These are unrelated to the upgrade (the type-checked rules were already configured). Note: the `/api/activity` REST stub is deprecated per the API Surface section and the register flow is moving to tRPC.
 
 ### Secrets
-`.gitignore` already excludes `.env` and `.env*.local`. No plaintext secrets committed (verified). Rotate and use `git filter-repo` if any secret is ever found in history.
+Scanned on 2026-08-04 — **no leaked secrets found.**
+
+Verification performed:
+- `git ls-files`: the only tracked env file is `.env.example` (placeholders only — `AUTH_SECRET=""`, `DATABASE_URL="postgresql://postgres:password@localhost..."`). `.env` is **not** tracked and has never been committed (`git log -- .env` is empty).
+- Pattern scan across the full git history (`git log --all --full-history -p | grep` for `sk-|ghp_|AKIA|PRIVATE KEY|xox|AIza|postgres://user:pass@|secret|token|password|api_key`): 22 hits, **all false positives** — Prisma generated field-name constants in `generated/prisma/*.js` (e.g. `access_token: 'access_token'`, where value == key) and the placeholder DB URL in `.env.example`. No real credentials.
+
+`.gitignore` excludes `.env` and `.env*.local`. Rotation + `git filter-repo` is the response if a real secret is ever committed.
+
+> Tooling note: the npm package `trufflehog` (via `npx`) is **not** the official TruffleSecurity scanner — it triggered an unrelated interactive "subreddit" prompt and is likely an unrelated/typosquat package. The official scanner ships as a Go binary / Docker image (`trufflesecurity/trufflehog`), not npm. The manual git-based scan above was used instead. For automated CI, prefer `gitleaks` (GitHub Action) or the official `trufflehog` binary.
+
+### Hygiene follow-up (not security-critical)
+`generated/prisma/` (the Prisma client output) is currently committed to git. Since `postinstall` already runs `prisma generate`, this directory should be gitignored to avoid bloating the repo and committing platform-specific engine binaries (`.dll.node`, `.wasm`). This is why the mock token-label false positives appeared in history.
+
+## CI/CD (Lab 5 — Build the Shield)
+
+The pipeline in `.github/workflows/ci.yml` runs on every PR and push to `main`, and is intended to be a required status check that gates merges. It has two jobs:
+
+1. **`gate`** (ubuntu-latest, Node 22) — runs sequentially: `npm ci` → `npm run lint` → `npm run typecheck` → `npx vitest run --coverage` → `npm audit --audit-level=high` → `npm run build`.
+2. **`secrets`** — `gitleaks/gitleaks-action@v2` over the full git history (`fetch-depth: 0`).
+
+`concurrency` cancels superseded runs on the same ref so only the latest commit gates a merge.
+
+### CI-specific notes
+- The `gate` job sets `SKIP_ENV_VALIDATION=1` because CI has no real `DATABASE_URL`/`AUTH_SECRET`. `next build` only type-checks and prerenders static pages (no DB connection at build time); the dynamic routes (`/dashboard`, `/api/*`) are server-rendered on demand. Env is re-validated at runtime once real variables are present (t3-env in `src/env.js`). This is the T3-recommended escape hatch.
+- `npm run test` is watch mode locally; CI uses `npx vitest run --coverage` (one-shot). Coverage provider is `v8` via `vitest.config.ts`.
+- Locally all six gates are verified green: lint 0 errors, typecheck clean, 10/10 tests (100% coverage on `src/lib`), `npm audit` 0 vulnerabilities, build succeeds.
+- To make the pipeline actually gate merges, enable branch protection on `main` and require both `gate` and `secrets` as required status checks (Settings → Branches).

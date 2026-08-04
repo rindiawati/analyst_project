@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel stale runs on the same ref so only the latest commit gates a merge.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Lint / Typecheck / Test / Audit / Build
+    runs-on: ubuntu-latest
+    env:
+      # `next build` runs t3-env validation (src/env.js). CI has no real
+      # secrets/DB, so skip it at build time — env is validated again at runtime
+      # once real variables are present. This is the T3-recommended escape hatch.
+      SKIP_ENV_VALIDATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # Next.js 16 requires Node 20.9+; match local dev (22).
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npx vitest run --coverage
+
+      - name: Dependency audit (high+)
+        run: npm audit --audit-level=high
+
+      - name: Build
+        run: npm run build
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — committed secrets are public forever
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

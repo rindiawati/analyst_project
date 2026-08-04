@@ -1,22 +1,26 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { z } from "zod";
 
 import { db } from "~/server/db";
 
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const parsed = registerSchema.safeParse(await request.json());
 
-    const email =
-      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-    const password = typeof body.password === "string" ? body.password : "";
-
-    if (!email || !password) {
+    if (!parsed.success) {
       return NextResponse.json(
         { error: "Email and password are required" },
         { status: 400 },
       );
     }
+
+    const email = parsed.data.email.trim().toLowerCase();
 
     const existingUser = await db.user.findUnique({
       where: {
@@ -31,7 +35,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
 
     const user = await db.user.create({
       data: {
