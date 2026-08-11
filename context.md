@@ -77,10 +77,12 @@ A weekly running target.
 
 ### tRPC (mounted at `/api/trpc`)
 - `auth.register` — **public** mutation. Input `{ email, password(min 8) }` → `{ id, email }`. Trims+lowercases email, hashes password (bcrypt cost 12), rejects duplicate email (throws `CONFLICT`). IP-rate-limited (10/min).
-- `activities.list` — **protected** query. No input → the caller's most recent 20 `Activity` rows (`runDate desc`), scoped to `session.user.id`. Used by the `/dashboard` "Recent runs" list.
+- `activities.list` — **protected** query. No input → the caller's most recent 20 `Activity` rows (`runDate desc`), scoped to `session.user.id`. Used by the `/dashboard` "Recent runs" list + as the source for dashboard stats.
+- `activities.get` — **protected** query. Input `{ id }` → the `Activity`. Ownership-enforced (NOT_FOUND if missing or not the caller's — existence of other users' runs is never leaked). Used by `/activities/[id]/edit`.
 - `activities.create` — **protected** mutation. Input `{ distance(km, >0), duration(min, >0), runDate(Date) }` → the created `Activity`. `averagePace` (min/km) is derived server-side as `duration / distance` (never trusted from the client). Used by the `/activities/new` form.
-- `activities.delete` — **protected** mutation. Input `{ id }` → `{ id }`. Loads the activity, enforces ownership via `checkActivityOwnership()` in `src/lib/activities.ts` (FORBIDDEN if not owner, NOT_FOUND if missing), then `db.activity.delete`. Cascade: deleting a User removes their Activities (schema-level). Ownership helper is unit-tested (`src/lib/activities.test.ts`).
-- (Goal router not yet implemented. The edit procedures are planned, not yet built.)
+- `activities.update` — **protected** mutation. Input `{ id, distance(>0), duration(>0), runDate(Date) }` → updated `Activity`. Ownership-enforced (same NOT_FOUND/FORBIDDEN contract as delete); recomputes `averagePace` server-side. Used by `/activities/[id]/edit`.
+- `activities.delete` — **protected** mutation. Input `{ id }` → `{ id }`. Loads the activity, enforces ownership via `checkActivityOwnership()` in `src/lib/activities.ts` (FORBIDDEN if not owner, NOT_FOUND if missing), then `db.activity.delete`. Ownership helper is unit-tested (`src/lib/activities.test.ts`). Cascade: deleting a User removes their Activities (schema-level).
+- (Goal router not yet implemented — model exists, no API/UI.)
 
 Procedure helpers in `src/server/api/trpc.ts`: `publicProcedure` (session optional) and `protectedProcedure` (requires `ctx.session.user`, throws UNAUTHORIZED).
 
@@ -225,7 +227,7 @@ Edge states wired across the App Router so no user ever sees a blank screen, a s
 - Pure, zero-dependency fixed-window limiter in `src/lib/rateLimit.ts` (co-located unit tests in `src/lib/rateLimit.test.ts`): `rateLimit(store, key, { windowMs, max }, now)` operates on an injected store so it's deterministic; `rateLimitKey(ip, scope)` namespaces buckets per endpoint; `ipRateLimit(ip, opts, scope)` + `getClientIp(headers)` are the integration helpers (reads `x-forwarded-for` → `x-real-ip` → `"unknown"`).
 - Applied per endpoint (each gets its own bucket via `rateLimitKey`):
   - **auth** `POST /api/register` + tRPC `auth.register` — 10 req/min/IP (REST returns `429` + `Retry-After`; tRPC throws `TOO_MANY_REQUESTS` via `createRateLimitMiddleware("register", …)` reading `ctx.ip`).
-  - **writes** tRPC `activities.create` + `activities.delete` — 30 req/min/IP (generous for normal data entry, stops brute force). Applied with `.use(createRateLimitMiddleware("create"|"delete", …))`.
+  - **writes** tRPC `activities.create` + `activities.update` + `activities.delete` — 30 req/min/IP (generous for normal data entry, stops brute force). Applied with `.use(createRateLimitMiddleware("create"|"update"|"delete", …))`.
 - **Limitation / production note:** the in-memory store is per-process, so on Vercel (many serverless instances) each instance keeps its own counter — an attacker can effectively multiply the limit by the number of warm instances. For production, swap `sharedStore` for a centralized one. **Recommended lightweight library for this stack: `@upstash/ratelimit` + `@upstash/redis`** (edge-friendly, REST based, no extra infra beyond a free Upstash DB; add `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` to `src/env.js` + `.env.example` when adopted). The limiter's pure signature is intentionally store-agnostic to make that swap a one-line change.
 
 ## Step 2 — End-to-End test (RED→GREEN) + Create-a-run flow
@@ -251,3 +253,25 @@ The critical path got a Playwright E2E spec written first (RED), then the missin
 ### Notes / known follow-ups
 - E2E registers a fresh `e2e+${Date.now()}@example.com` user each run against the DB (accumulates; acceptable for MVP). Don't fan out into many register-based tests within a minute (register is 10/min/IP; all localhost traffic shares the `register` bucket).
 - Remaining hardening (not blockers): move the in-memory limiter store to `@upstash/ratelimit` for multi-instance prod; make the E2E test idempotent (clean the test user's runs) if the suite grows.
+
+## Product layer — Tier 1 (stats, edit, delete UI)
+
+Closes the gap that the dashboard "only showed a list." Now a logged-in user sees summary stats and can edit/delete runs — all using logic/data that mostly already existed.
+
+### Dashboard stats
+- `src/lib/stats.ts` (pure, co-located `stats.test.ts`, 15 tests): `totalDistance`, `longestRun`, `distanceThisWeek` (Mon–Sun week), `averagePace`, `currentStreak`.
+- `currentStreak` is the dashboard-facing streak: counts consecutive run-days back from today, but if today has no run yet it still counts from yesterday (streak not shown as broken mid-day). This is deliberately separate from the stricter `streakLength` in `streak.ts` (which returns 0 unless you ran today); `streakLength` is kept as-is for its tested contract.
+- `StatsSummary` (`src/app/dashboard/_components/stats-summary.tsx`) renders 5 cards (Total, Longest, This week, Avg pace, Streak); only shown when the user has ≥1 run (otherwise the empty state alone).
+- Computed server-side in `dashboard/page.tsx` from the `activities.list` data — no new query.
+
+### Per-row actions
+- `DeleteActivityButton` (`src/app/dashboard/_components/delete-activity-button.tsx`): client component, calls `activities.delete`, then `router.refresh()` so the dashboard server component re-renders and the row disappears.
+- Edit: link per row → `/activities/[id]/edit` (see API surface `activities.get`/`update`). Edit page catches the ownership error and calls `notFound()`, so other users' runs surface as 404 (no existence leak).
+
+### Shared form
+- `src/app/_components/activity-form.tsx` backs both `/activities/new` (create) and `/activities/[id]/edit` (update) — one component picks the mutation from whether `id` is passed, keeping validation/labels/styling in sync.
+
+### Still ahead (not blockers)
+- `Goal` model still has no router/UI.
+- No charts/analytics yet (the "analyze" layer — Tier 2).
+- Strava/Garmin import not started (manual entry only).

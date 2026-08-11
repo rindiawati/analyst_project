@@ -12,6 +12,7 @@ import {
 // still stops brute-force. Each endpoint gets its own bucket (see rateLimitKey).
 const writeLimit = { windowMs: 60_000, max: 30 };
 const createLimiter = createRateLimitMiddleware("create", writeLimit);
+const updateLimiter = createRateLimitMiddleware("update", writeLimit);
 const deleteLimiter = createRateLimitMiddleware("delete", writeLimit);
 
 export const activitiesRouter = createTRPCRouter({
@@ -22,6 +23,28 @@ export const activitiesRouter = createTRPCRouter({
       take: 20,
     });
   }),
+
+  get: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const activity = await ctx.db.activity.findUnique({
+        where: { id: input.id },
+      });
+
+      const check = checkActivityOwnership(activity, ctx.session.user.id);
+      if (!check.ok) {
+        throw new TRPCError({
+          code: check.code === "NOT_FOUND" ? "NOT_FOUND" : "FORBIDDEN",
+        });
+      }
+
+      // Ownership check above threw NOT_FOUND when activity was null.
+      if (activity === null) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      return activity;
+    }),
 
   create: protectedProcedure
     .use(createLimiter)
@@ -43,6 +66,42 @@ export const activitiesRouter = createTRPCRouter({
           averagePace,
           runDate: input.runDate,
           userId: ctx.session.user.id,
+        },
+      });
+    }),
+
+  update: protectedProcedure
+    .use(updateLimiter)
+    .input(
+      z.object({
+        id: z.string(),
+        distance: z.number().positive(),
+        duration: z.number().positive(),
+        runDate: z.date(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const activity = await ctx.db.activity.findUnique({
+        where: { id: input.id },
+        select: { userId: true },
+      });
+
+      const check = checkActivityOwnership(activity, ctx.session.user.id);
+      if (!check.ok) {
+        throw new TRPCError({
+          code: check.code === "NOT_FOUND" ? "NOT_FOUND" : "FORBIDDEN",
+        });
+      }
+
+      const averagePace = input.duration / input.distance;
+
+      return ctx.db.activity.update({
+        where: { id: input.id },
+        data: {
+          distance: input.distance,
+          duration: input.duration,
+          averagePace,
+          runDate: input.runDate,
         },
       });
     }),
