@@ -13,6 +13,11 @@ export const authConfig = {
     signIn: "/login",
   },
   session: { strategy: "jwt" },
+  // Auth.js v5 only trusts the host automatically on Vercel. Without this, any
+  // non-Vercel host (localhost in `next start`, self-hosted, Docker, other
+  // platforms) throws `UntrustedHost` and auth breaks. Required for local prod
+  // testing and any non-Vercel deployment.
+  trustHost: true,
   providers: [],
   callbacks: {
     authorized({ auth, request }) {

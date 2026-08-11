@@ -49,6 +49,8 @@ export default function RegisterPage() {
         <form onSubmit={handleRegister} className="flex flex-col gap-4">
           <input
             type="email"
+            name="email"
+            autoComplete="email"
             placeholder="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -56,6 +58,8 @@ export default function RegisterPage() {
           />
           <input
             type="password"
+            name="password"
+            autoComplete="new-password"
             placeholder="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

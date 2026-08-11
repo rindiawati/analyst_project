@@ -15,7 +15,7 @@ Individuals who run for fitness, recreation, or training and want to track, anal
 - Deploy: Vercel
 
 ## Directory Structure
-- `src/app/` — App Router: pages (`/`, `/login`, `/register`, `/dashboard`) + `api/` routes
+- `src/app/` — App Router: pages (`/`, `/login`, `/register`, `/dashboard`, `/activities/new`) + `api/` routes
 - `src/app/api/` — route handlers: `register`, `activity`, `auth/[...nextauth]`, `trpc/[trpc]`
 - `src/server/api/` — tRPC: `root.ts` (appRouter), `trpc.ts` (context + procedures), `routers/`
 - `src/server/auth/` — NextAuth `config.ts` (edge) + `index.ts` (full)
@@ -25,7 +25,8 @@ Individuals who run for fitness, recreation, or training and want to track, anal
 - `src/middleware.ts` — route protection
 - `prisma/schema.prisma` + `prisma/migrations/`
 - `plans/` — per-feature planning docs (e.g. `runtrackAI.md`)
-- Tests are co-located as `*.test.ts` (no separate `tests/` dir yet)
+- `e2e/` — Playwright E2E specs (e.g. `core.spec.ts`, the critical register→login→log-a-run path); `playwright.config.ts` boots a dedicated dev server on `:3001`
+- Unit tests are co-located as `*.test.ts` (no separate `tests/` dir yet)
 
 ## Data Models
 (from `prisma/schema.prisma`)
@@ -75,9 +76,11 @@ A weekly running target.
 ## API Surface
 
 ### tRPC (mounted at `/api/trpc`)
-- `auth.register` — **public** mutation. Input `{ email, password(min 8) }` → `{ id, email }`. Trims+lowercases email, hashes password (bcrypt cost 12), rejects duplicate email.
+- `auth.register` — **public** mutation. Input `{ email, password(min 8) }` → `{ id, email }`. Trims+lowercases email, hashes password (bcrypt cost 12), rejects duplicate email (throws `CONFLICT`). IP-rate-limited (10/min).
+- `activities.list` — **protected** query. No input → the caller's most recent 20 `Activity` rows (`runDate desc`), scoped to `session.user.id`. Used by the `/dashboard` "Recent runs" list.
+- `activities.create` — **protected** mutation. Input `{ distance(km, >0), duration(min, >0), runDate(Date) }` → the created `Activity`. `averagePace` (min/km) is derived server-side as `duration / distance` (never trusted from the client). Used by the `/activities/new` form.
 - `activities.delete` — **protected** mutation. Input `{ id }` → `{ id }`. Loads the activity, enforces ownership via `checkActivityOwnership()` in `src/lib/activities.ts` (FORBIDDEN if not owner, NOT_FOUND if missing), then `db.activity.delete`. Cascade: deleting a User removes their Activities (schema-level). Ownership helper is unit-tested (`src/lib/activities.test.ts`).
-- (Goal router not yet implemented. The `/admin/activities` page and the create/list/edit procedures are planned, not yet built.)
+- (Goal router not yet implemented. The edit procedures are planned, not yet built.)
 
 Procedure helpers in `src/server/api/trpc.ts`: `publicProcedure` (session optional) and `protectedProcedure` (requires `ctx.session.user`, throws UNAUTHORIZED).
 
@@ -94,7 +97,7 @@ Procedure helpers in `src/server/api/trpc.ts`: `publicProcedure` (session option
 NextAuth (Auth.js v5 beta) with the **Credentials** provider (email + password). Passwords hashed with `bcryptjs` (`bcrypt.hash(pw, 12)` on register, `bcrypt.compare` on login). Plaintext is never stored. Session strategy: JWT.
 
 ### Where the config lives
-- `src/server/auth/config.ts` — edge-safe base config: `session: { strategy: "jwt" }`, `pages.signIn = "/login"`, the `authorized` callback (protects `/dashboard`), and the `session` callback (exposes `user.id`). Imported by the middleware.
+- `src/server/auth/config.ts` — edge-safe base config: `session: { strategy: "jwt" }`, `pages.signIn = "/login"`, **`trustHost: true`** (required for any non-Vercel host — see "Latent auth bug fixed" under Step 2), the `authorized` callback (protects `/dashboard`), and the `session` callback (exposes `user.id`). Imported by the middleware.
 - `src/server/auth/index.ts` — full config: spreads `authConfig`, adds `PrismaAdapter(db)` and the Credentials `authorize`. Used by route handlers and server components.
 - `src/middleware.ts` — builds `auth` from the edge-safe config; matcher `/dashboard/:path*`.
 - `src/app/api/auth/[...nextauth]/route.ts` — exposes `GET`/`POST`.
@@ -140,15 +143,16 @@ Validated in `src/env.js` (t3-env + zod). Copy `.env.example` → `.env`.
 ## Testing
 
 ### Test Runner
-Vitest (unit tests). Coverage via `@vitest/coverage-v8`.
+Vitest (unit tests). Coverage via `@vitest/coverage-v8`. Playwright (E2E) for the critical user flow.
 
 ### How to Run Tests
 ```bash
-npm run test      # watch mode (vitest)
+npm run test      # watch mode (vitest, unit tests only)
+npm run e2e       # Playwright E2E (boots its own dev server on :3001)
 npm run check     # eslint . + tsc --noEmit
 npm run typecheck # tsc only
 ```
-Tests are co-located next to source as `*.test.ts` (e.g. `src/lib/streak.test.ts`, `src/lib/activities.test.ts`). Playwright (e2e) is planned but not yet installed. Empty T3 boilerplate test stubs (`auth.test.ts`, `trpc.test.ts`) were removed — recreate with actual tests when needed.
+Unit tests are co-located next to source as `*.test.ts` (e.g. `src/lib/streak.test.ts`, `src/lib/activities.test.ts`, `src/lib/rateLimit.test.ts`). E2E specs live in `e2e/` (e.g. `e2e/core.spec.ts`) and are excluded from vitest discovery via `vitest.config.ts`. Empty T3 boilerplate test stubs (`auth.test.ts`, `trpc.test.ts`) were removed — recreate with actual tests when needed.
 
 ## Security (Lab 5 — Build the Shield)
 
@@ -199,3 +203,51 @@ The pipeline in `.github/workflows/ci.yml` runs on every PR and push to `main`, 
 - `npm run test` is watch mode locally; CI uses `npx vitest run --coverage` (one-shot). Coverage provider is `v8` via `vitest.config.ts`.
 - Locally all six gates are verified green: lint 0 errors, typecheck clean, 10/10 tests (100% coverage on `src/lib`), `npm audit` 0 vulnerabilities, build succeeds.
 - To make the pipeline actually gate merges, enable branch protection on `main` and require both `gate` and `secrets` as required status checks (Settings → Branches).
+
+## Polish the Edges (Step 1)
+
+Edge states wired across the App Router so no user ever sees a blank screen, a spinner, a raw stack trace, or an un-throttled endpoint.
+
+### Empty states
+- One reusable component, reused everywhere: `src/app/_components/empty-state.tsx` (`EmptyState` — friendly `title` + `message` + optional `action: { label, href }`). Never pass an `action` until the destination route exists (so no dead links).
+- Applied in `src/app/dashboard/_components/activities-list.tsx`: 0 runs → "No runs yet".
+
+### Loading states (skeletons, not spinners)
+- Reusable `src/app/_components/skeleton.tsx` (`Skeleton` = `animate-pulse` block).
+- `src/app/loading.tsx` (global) and `src/app/dashboard/loading.tsx` (dashboard layout skeleton) are used by Next's route-level `<Suspense>` automatically during navigation/streaming.
+
+### Error states
+- `src/app/not-found.tsx` — custom 404, friendly message + CTA to `/dashboard`.
+- `src/app/error.tsx` — global route error boundary (client component). `console.error(error)` logs server-side; users see a friendly message + "Try again" (`reset`). No stack traces leaked.
+- `src/app/dashboard/error.tsx` — dashboard-scoped variant ("Couldn't load your dashboard").
+
+### Rate limiting (basic, IP-based)
+- Pure, zero-dependency fixed-window limiter in `src/lib/rateLimit.ts` (co-located unit tests in `src/lib/rateLimit.test.ts`): `rateLimit(store, key, { windowMs, max }, now)` operates on an injected store so it's deterministic; `rateLimitKey(ip, scope)` namespaces buckets per endpoint; `ipRateLimit(ip, opts, scope)` + `getClientIp(headers)` are the integration helpers (reads `x-forwarded-for` → `x-real-ip` → `"unknown"`).
+- Applied per endpoint (each gets its own bucket via `rateLimitKey`):
+  - **auth** `POST /api/register` + tRPC `auth.register` — 10 req/min/IP (REST returns `429` + `Retry-After`; tRPC throws `TOO_MANY_REQUESTS` via `createRateLimitMiddleware("register", …)` reading `ctx.ip`).
+  - **writes** tRPC `activities.create` + `activities.delete` — 30 req/min/IP (generous for normal data entry, stops brute force). Applied with `.use(createRateLimitMiddleware("create"|"delete", …))`.
+- **Limitation / production note:** the in-memory store is per-process, so on Vercel (many serverless instances) each instance keeps its own counter — an attacker can effectively multiply the limit by the number of warm instances. For production, swap `sharedStore` for a centralized one. **Recommended lightweight library for this stack: `@upstash/ratelimit` + `@upstash/redis`** (edge-friendly, REST based, no extra infra beyond a free Upstash DB; add `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` to `src/env.js` + `.env.example` when adopted). The limiter's pure signature is intentionally store-agnostic to make that swap a one-line change.
+
+## Step 2 — End-to-End test (RED→GREEN) + Create-a-run flow
+
+The critical path got a Playwright E2E spec written first (RED), then the missing "log a run" feature was implemented until it went GREEN.
+
+### E2E (Playwright)
+- Installed `@playwright/test` (devDep) + chromium browser (`npm run e2e:install`). Run with `npm run e2e`.
+- `e2e/core.spec.ts` covers: register → login (no auto-login after register) → dashboard empty state → `/activities/new` form → run appears on dashboard. Excluded from vitest via `vitest.config.ts`.
+- `playwright.config.ts` runs E2E against a **production build on port 3001** (`npm run preview -- --port 3001` = `next build && next start`). Production mode was chosen over `next dev` because (a) dev has per-route cold-compilation that made the NextAuth callback flaky on first hit, and (b) it tests the actual deployed artifact. The downside: a full build per run (~1 min). `reuseExistingServer` lets you keep one warm locally.
+
+### Create-a-run feature
+- `activities.create` mutation (`src/server/api/routers/activities.ts`): input `{ distance(>0), duration(>0), runDate(Date) }`; `averagePace = duration / distance` derived server-side (min/km).
+- `/activities/new` (`src/app/activities/new/page.tsx`): client form using `api.activities.create.useMutation()`; on success invalidates `activities.list` and `router.push("/dashboard")`.
+- Dashboard (`src/app/dashboard/page.tsx`): a "Log a run" primary link in the "Recent runs" header (the single, always-available CTA — the empty state intentionally stays message-only to avoid duplicate/named-link collisions in the E2E selector).
+
+### Latent auth bug fixed (found via E2E on a production build)
+- Added `trustHost: true` to `src/server/auth/config.ts`. Auth.js v5 only auto-trusts the host on Vercel; on any other host (localhost under `next start`, self-hosted, Docker, other platforms) it throws `UntrustedHost` and **every auth request fails**. Without this, the app's login would break on any non-Vercel deployment — `next dev` hid it because dev mode auto-trusts localhost. Now auth works in production mode everywhere.
+
+### CI
+- `.github/workflows/ci.yml` gained an `e2e` job (alongside `gate` + `secrets`): a `postgres:16` service container + throwaway `DATABASE_URL`/`AUTH_SECRET`/discord dummies → `npm ci` → `npx prisma migrate deploy` → `npx playwright install --with-deps chromium` → `npx playwright test` → uploads the HTML report as an artifact. To gate merges on it, add `e2e` to required status checks under branch protection (same as `gate`/`secrets`).
+
+### Notes / known follow-ups
+- E2E registers a fresh `e2e+${Date.now()}@example.com` user each run against the DB (accumulates; acceptable for MVP). Don't fan out into many register-based tests within a minute (register is 10/min/IP; all localhost traffic shares the `register` bucket).
+- Remaining hardening (not blockers): move the in-memory limiter store to `@upstash/ratelimit` for multi-instance prod; make the E2E test idempotent (clean the test user's runs) if the suite grows.
