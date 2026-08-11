@@ -64,11 +64,18 @@ describe("averagePace", () => {
     expect(averagePace([])).toBe(0);
   });
 
-  it("returns the mean pace", () => {
-    expect(averagePace([{ averagePace: 5 }, { averagePace: 6 }, { averagePace: 7 }])).toBeCloseTo(
-      6,
-      5,
-    );
+  it("returns total duration / total distance (time-weighted)", () => {
+    // 10km in 60min + 5km in 20min => 80min / 15km = 5.333 min/km
+    expect(
+      averagePace([
+        { distance: 10, duration: 60 },
+        { distance: 5, duration: 20 },
+      ]),
+    ).toBeCloseTo(5.3333, 3);
+  });
+
+  it("returns 0 when total distance is 0", () => {
+    expect(averagePace([{ distance: 0, duration: 30 }])).toBe(0);
   });
 });
 

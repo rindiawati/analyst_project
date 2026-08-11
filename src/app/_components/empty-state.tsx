@@ -17,13 +17,13 @@ export function EmptyState({
   action?: EmptyStateAction;
 }) {
   return (
-    <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center">
+    <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-dashed border-white/20 bg-surface px-6 py-12 text-center">
       <h3 className="text-xl font-semibold text-white">{title}</h3>
       <p className="max-w-sm text-sm text-white/60">{message}</p>
       {action ? (
         <Link
           href={action.href}
-          className="mt-2 rounded-full bg-white/10 px-6 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+          className="mt-2 rounded-full bg-accent px-6 py-2 text-sm font-semibold text-accent-contrast transition hover:bg-accent/90"
         >
           {action.label}
         </Link>

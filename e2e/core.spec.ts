@@ -34,7 +34,7 @@ test("user can register, log in, and log a run", async ({ page }) => {
   await page.getByRole("link", { name: /log a run/i }).click();
   await expect(page).toHaveURL(/\/activities\/new/);
   await page.fill("[name=distance]", "5.2");
-  await page.fill("[name=duration]", "28");
+  await page.fill("[name=minutes]", "28");
   await page.fill("[name=runDate]", "2026-01-15");
   await page.click("button[type=submit]");
 

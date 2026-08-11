@@ -3,4 +3,10 @@
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  /* Adizero "Solar Green" colorway: near-black base, lime accent. */
+  --color-base: #0b0b0d;
+  --color-surface: #17171c;
+  --color-accent: #c6ff00;
+  --color-accent-contrast: #0b0b0d;
 }

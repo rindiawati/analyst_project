@@ -5,13 +5,17 @@ import { useState } from "react";
 
 import type { RouterOutputs } from "~/trpc/react";
 import { api } from "~/trpc/react";
+import { durationFromParts, durationToParts } from "~/lib/duration";
 
 type Activity = RouterOutputs["activities"]["get"];
 
+const inputClass =
+  "rounded-lg border border-white/20 bg-white/10 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-accent/50";
+
 /**
  * Shared create/edit form. Omit `id`/`defaultValues` for a new run; pass both
- * to edit an existing one. The same component backs `/activities/new` and
- * `/activities/[id]/edit` so validation, labels, and styling stay in sync.
+ * to edit an existing one. Duration is entered as hours/minutes/seconds and
+ * combined into minutes (how `Activity.duration` is stored).
  */
 export function ActivityForm({
   id,
@@ -24,11 +28,21 @@ export function ActivityForm({
   const utils = api.useUtils();
   const isEdit = id !== undefined;
 
+  const initialParts = defaultValues
+    ? durationToParts(defaultValues.duration)
+    : null;
+
   const [distance, setDistance] = useState(
     defaultValues ? String(defaultValues.distance) : "",
   );
-  const [duration, setDuration] = useState(
-    defaultValues ? String(defaultValues.duration) : "",
+  const [hours, setHours] = useState(
+    initialParts ? String(initialParts.hours) : "",
+  );
+  const [minutes, setMinutes] = useState(
+    initialParts ? String(initialParts.minutes) : "",
+  );
+  const [seconds, setSeconds] = useState(
+    initialParts ? String(initialParts.seconds) : "",
   );
   const [runDate, setRunDate] = useState(
     defaultValues
@@ -58,16 +72,29 @@ export function ActivityForm({
     setError("");
 
     const distanceNum = Number(distance);
-    const durationNum = Number(duration);
+    if (!(distanceNum > 0)) {
+      setError("Enter a valid distance (km).");
+      return;
+    }
 
-    if (!(distanceNum > 0) || !(durationNum > 0)) {
-      setError("Enter a valid distance (km) and duration (min).");
+    const h = Number(hours) || 0;
+    const m = Number(minutes) || 0;
+    const s = Number(seconds) || 0;
+
+    if (m >= 60 || s >= 60) {
+      setError("Minutes and seconds must be under 60.");
+      return;
+    }
+
+    const duration = durationFromParts(h, m, s);
+    if (!(duration > 0)) {
+      setError("Enter how long the run took.");
       return;
     }
 
     const payload = {
       distance: distanceNum,
-      duration: durationNum,
+      duration,
       runDate: new Date(runDate),
     };
 
@@ -96,23 +123,54 @@ export function ActivityForm({
           value={distance}
           onChange={(e) => setDistance(e.target.value)}
           required
-          className="rounded-lg border border-white/20 bg-white/10 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+          className={inputClass}
         />
       </label>
-      <label className="flex flex-col gap-1 text-sm text-white/70">
-        Duration (min)
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          name="duration"
-          autoComplete="off"
-          value={duration}
-          onChange={(e) => setDuration(e.target.value)}
-          required
-          className="rounded-lg border border-white/20 bg-white/10 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-white/40"
-        />
-      </label>
+
+      <div className="flex flex-col gap-1 text-sm text-white/70">
+        <span>Duration</span>
+        <div className="grid grid-cols-3 gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-white/40">Hours</span>
+            <input
+              type="number"
+              min="0"
+              name="hours"
+              autoComplete="off"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-white/40">Minutes</span>
+            <input
+              type="number"
+              min="0"
+              max="59"
+              name="minutes"
+              autoComplete="off"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-white/40">Seconds</span>
+            <input
+              type="number"
+              min="0"
+              max="59"
+              name="seconds"
+              autoComplete="off"
+              value={seconds}
+              onChange={(e) => setSeconds(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+        </div>
+      </div>
+
       <label className="flex flex-col gap-1 text-sm text-white/70">
         Date
         <input
@@ -121,24 +179,21 @@ export function ActivityForm({
           value={runDate}
           onChange={(e) => setRunDate(e.target.value)}
           required
-          className="rounded-lg border border-white/20 bg-white/10 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+          className={inputClass}
         />
       </label>
+
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="mt-2 rounded-full bg-white/10 px-10 py-3 font-semibold transition hover:bg-white/20 disabled:opacity-50"
+        className="mt-2 rounded-full bg-accent px-10 py-3 font-semibold text-accent-contrast transition hover:bg-accent/90 disabled:opacity-50"
       >
-        {mutation.isPending
-          ? "Saving..."
-          : isEdit
-            ? "Save changes"
-            : "Log run"}
+        {mutation.isPending ? "Saving..." : isEdit ? "Save changes" : "Log run"}
       </button>
       <button
         type="button"
         onClick={() => router.push("/dashboard")}
-        className="text-center text-sm text-white/70 underline hover:text-white"
+        className="text-center text-sm text-white/70 underline hover:text-accent"
       >
         Cancel
       </button>

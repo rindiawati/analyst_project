@@ -46,9 +46,18 @@ export function distanceThisWeek(
     .reduce((sum, run) => sum + run.distance, 0);
 }
 
-export function averagePace(runs: { averagePace: number }[]): number {
-  if (runs.length === 0) return 0;
-  return runs.reduce((sum, run) => sum + run.averagePace, 0) / runs.length;
+/**
+ * Overall average pace across runs, as total duration / total distance
+ * (min/km). This is time-weighted — the *correct* average — unlike the
+ * arithmetic mean of per-run paces, which would over-weight short runs.
+ */
+export function averagePace(
+  runs: { distance: number; duration: number }[],
+): number {
+  const totalDistance = runs.reduce((sum, run) => sum + run.distance, 0);
+  if (totalDistance === 0) return 0;
+  const totalDuration = runs.reduce((sum, run) => sum + run.duration, 0);
+  return totalDuration / totalDistance;
 }
 
 /**

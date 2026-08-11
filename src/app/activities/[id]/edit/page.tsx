@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { ActivityForm } from "~/app/_components/activity-form";
+import { AppHeader } from "~/app/_components/app-header";
+import { auth } from "~/server/auth";
 import { api } from "~/trpc/server";
 import type { RouterOutputs } from "~/trpc/react";
 
@@ -23,11 +25,16 @@ export default async function EditActivityPage({
     notFound();
   }
 
+  const session = await auth();
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-white/10 p-8">
-        <h1 className="text-center text-3xl font-extrabold">Edit run</h1>
-        <ActivityForm id={activity.id} defaultValues={activity} />
+    <main className="flex min-h-screen flex-col bg-base text-white">
+      <AppHeader email={session?.user?.email} />
+      <div className="flex flex-1 items-center justify-center px-4 pb-16">
+        <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-surface p-8">
+          <h1 className="text-center text-3xl font-extrabold">Edit run</h1>
+          <ActivityForm id={activity.id} defaultValues={activity} />
+        </div>
       </div>
     </main>
   );

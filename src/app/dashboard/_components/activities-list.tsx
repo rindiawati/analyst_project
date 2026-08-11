@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { formatPace } from "~/lib/pace";
 import type { RouterOutputs } from "~/trpc/react";
 import { EmptyState } from "~/app/_components/empty-state";
 import { DeleteActivityButton } from "./delete-activity-button";
@@ -10,7 +11,7 @@ const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
 
 function ActivityRow({ activity }: { activity: Activity }) {
   return (
-    <li className="flex items-center justify-between gap-3 rounded-xl bg-white/5 px-5 py-4">
+    <li className="flex items-center justify-between gap-3 rounded-xl bg-surface px-5 py-4">
       <div className="flex flex-col">
         <span className="font-semibold text-white">
           {activity.distance.toFixed(2)} km
@@ -22,11 +23,11 @@ function ActivityRow({ activity }: { activity: Activity }) {
       <div className="flex items-center gap-4 text-sm text-white/70">
         <span className="hidden sm:inline">{activity.duration.toFixed(0)} min</span>
         <span className="hidden sm:inline">
-          {activity.averagePace.toFixed(2)} /km
+          {formatPace(activity.averagePace)} /km
         </span>
         <Link
           href={`/activities/${activity.id}/edit`}
-          className="text-white/60 transition hover:text-white"
+          className="text-white/60 transition hover:text-accent"
         >
           Edit
         </Link>

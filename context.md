@@ -275,3 +275,11 @@ Closes the gap that the dashboard "only showed a list." Now a logged-in user see
 - `Goal` model still has no router/UI.
 - No charts/analytics yet (the "analyze" layer — Tier 2).
 - Strava/Garmin import not started (manual entry only).
+
+## Product layer — Tier 1.5 (UI refresh)
+
+- **Theme (Adizero "Solar Green"):** tokens in `src/styles/globals.css` via Tailwind v4 `@theme` — `--color-base` (`#0b0b0d`, near-black bg), `--color-surface` (`#17171c`, cards), `--color-accent` (`#c6ff00`, lime), `--color-accent-contrast`. Use as `bg-base` / `bg-surface` / `text-accent` / `bg-accent text-accent-contrast`. Replaces the old purple gradient everywhere. **Dev gotcha:** adding `@theme` tokens needs a `.next` clear + dev restart, else the dev server serves stale CSS (production build picks them up fine).
+- **App bar:** `src/app/_components/app-header.tsx` shows the account email (small) + a Logout button in the top-right corner on authenticated pages (dashboard + run forms). The old `dashboard/_components/logout-button.tsx` was removed.
+- **Duration entry:** the run form (`activity-form.tsx`) now takes hours/minutes/seconds (3 inputs) instead of a single minutes field. Conversion lives in `src/lib/duration.ts` (`durationFromParts` / `durationToParts`, + tests); the form combines to minutes (how `Activity.duration` is stored). E2E fills `[name=minutes]`.
+- **Pace format:** `src/lib/pace.ts` `formatPace(minPerKm)` renders pace as runner-friendly `M:SS` (e.g. `7.747` → `7:44`) via the seconds/distance method (truncate to the second, with a tiny epsilon for float safety). Applied in the run row and the Avg-pace stat card.
+- **Avg pace corrected:** `stats.averagePace` is now **time-weighted** (`totalDuration / totalDistance`), not the arithmetic mean of per-run paces (which over-weighted short runs).
