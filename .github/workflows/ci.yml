@@ -62,8 +62,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
-      # Real Postgres so `npm run dev` (started by Playwright) can connect,
-      # migrate, and the critical-path test can actually register + log a run.
+      # Real Postgres so the production build (started by Playwright via
+      # `npm run preview`) can connect, migrate, and the critical-path test
+      # can actually register + log a run.
       postgres:
         image: postgres:16
         env:
@@ -101,8 +102,9 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E
-        # playwright.config.ts boots its own `npm run dev` on :3001 (CI does not
-        # reuse an existing server), which inherits this job's env.
+        # playwright.config.ts boots its own production build (`npm run preview`)
+        # on :3001 (CI does not reuse an existing server); the build inherits
+        # this job's env, and `trustHost: true` lets auth work on localhost.
         run: npx playwright test
 
       - name: Upload Playwright report
