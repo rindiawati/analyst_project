@@ -274,7 +274,7 @@ Closes the gap that the dashboard "only showed a list." Now a logged-in user see
 ### Still ahead (not blockers)
 - `Goal` model still has no router/UI.
 - No charts/analytics yet (the "analyze" layer — Tier 2).
-- Strava/Garmin import not started (manual entry only).
+- Strava import done (Phase 1); Garmin/Apple Health not started.
 
 ## Product layer — Tier 1.5 (UI refresh)
 
@@ -286,7 +286,7 @@ Closes the gap that the dashboard "only showed a list." Now a logged-in user see
 
 ## Strava integration — Phase 1 (connect + manual sync)
 
-Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last 365 days of runs. Auto-sync via webhook is Phase 2 (not built). **Not yet testable end-to-end** — needs a Strava API app (client_id/secret) wired into `.env`.
+Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last 365 days of runs. Auto-sync via webhook is Phase 2 (not built). **Verified working end-to-end** with a real Strava API app (`STRAVA_CLIENT_ID`/`STRAVA_CLIENT_SECRET` in `.env`, callback domain = `localhost`).
 
 ### Data model
 - `prisma/schema.prisma`: new `StravaIntegration` model (one per user, `userId @unique`): `athleteId`, `accessToken`, `refreshToken`, `expiresAt`, `scope`. Added `Activity.stravaId String? @unique` for import dedup. Migration `20260811150000_add_strava_integration`.
@@ -306,6 +306,13 @@ Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last
 - `src/app/dashboard/_components/strava-connect.tsx`: "Connect Strava" link when not connected; "Sync now" button (calls `strava.sync`, then `router.refresh()`) when connected. Wired into the dashboard header next to "Log a run". Dashboard now also fetches `api.strava.status()`.
 
 ### Known limitations / next
-- End-to-end untested without a Strava app. When creds are added, test: connect → callback stores integration → Sync imports runs → they appear on the dashboard.
-- Phase 2: webhook subscription (`/api/strava/webhook`) for real-time auto-sync — needs a public HTTPS URL.
+- End-to-end **verified working**: connect → callback stores integration → Sync imports runs → they appear on the dashboard + stats. (Phase 1 pulls the last 365 days on each Sync; re-syncs dedup by `stravaId`.)
+- Phase 2: webhook subscription (`/api/strava/webhook`) for real-time auto-sync — needs a public HTTPS URL + `STRAVA_VERIFY_TOKEN`.
 - Tokens plaintext (see security TODO).
+
+## Product layer — Tier 2 (charts, goals, app shell)
+
+- **Charts (no dependency):** `src/lib/charts.ts` (pure, tested) — `weeklyMileage` + `weeklyPace` (Mon–Sun weeks, default last 8). Rendered as dependency-free SVG: `src/app/_components/weekly-mileage-chart.tsx` (bars) and `pace-trend-chart.tsx` (line; lower pace = faster = plotted higher; no-run weeks leave a gap; needs ≥2 run-weeks). Shown on the dashboard (when ≥1 run) and `/stats`.
+- **Weekly goal:** `goals` router (`get` + `setTarget`) uses the previously-dormant `Goal` model — one effective goal per user (latest row; `targetRunsPerWeek` unused, set to 0). `src/app/dashboard/_components/goal-progress.tsx` is read-only on the dashboard (progress bar of this week's km vs target, or "Set a weekly goal →" link to `/profile` when none) and editable on `/profile`.
+- **App shell (mobile):** `src/app/_components/bottom-nav.tsx` — fixed bottom tab bar (Home / Stats / Add / Profile), `md:hidden`, `usePathname` for active state, "Add" is the accent/primary tab. New pages `/stats` (charts, bigger) and `/profile` (goal edit + Strava + account). Authenticated pages add `pb-24` so content clears the bar.
+- Still ahead: period selector (week/month/year), run-detail page + route map (Strava `summary_polyline`), PR/achievement cards, profile display name + units (km/mi).
