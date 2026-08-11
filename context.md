@@ -283,3 +283,29 @@ Closes the gap that the dashboard "only showed a list." Now a logged-in user see
 - **Duration entry:** the run form (`activity-form.tsx`) now takes hours/minutes/seconds (3 inputs) instead of a single minutes field. Conversion lives in `src/lib/duration.ts` (`durationFromParts` / `durationToParts`, + tests); the form combines to minutes (how `Activity.duration` is stored). E2E fills `[name=minutes]`.
 - **Pace format:** `src/lib/pace.ts` `formatPace(minPerKm)` renders pace as runner-friendly `M:SS` (e.g. `7.747` → `7:44`) via the seconds/distance method (truncate to the second, with a tiny epsilon for float safety). Applied in the run row and the Avg-pace stat card.
 - **Avg pace corrected:** `stats.averagePace` is now **time-weighted** (`totalDuration / totalDistance`), not the arithmetic mean of per-run paces (which over-weighted short runs).
+
+## Strava integration — Phase 1 (connect + manual sync)
+
+Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last 365 days of runs. Auto-sync via webhook is Phase 2 (not built). **Not yet testable end-to-end** — needs a Strava API app (client_id/secret) wired into `.env`.
+
+### Data model
+- `prisma/schema.prisma`: new `StravaIntegration` model (one per user, `userId @unique`): `athleteId`, `accessToken`, `refreshToken`, `expiresAt`, `scope`. Added `Activity.stravaId String? @unique` for import dedup. Migration `20260811150000_add_strava_integration`.
+- **Security TODO:** tokens are stored plaintext. Encrypt at rest (needs an `ENCRYPTION_KEY`) before any real deployment.
+
+### Config (optional)
+- `src/env.js` + `.env.example`: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_VERIFY_TOKEN` — all `.optional()`, so the app runs without them; the Strava UI just no-ops until they're set. Create an app at `developers.strava.com`; the redirect URI registered there must be `<origin>/api/strava/callback` (e.g. `http://localhost:3000/api/strava/callback`).
+
+### Layers
+- `src/lib/strava.ts` (pure, tested `strava.test.ts`): `isRunActivity` (Run + VirtualRun), `mapStravaActivity` (m→km, s→min, `averagePace = duration/distance`, `start_date_local`→runDate, `String(id)`→stravaId).
+- `src/server/strava.ts` (server-only HTTP): `isStravaConfigured`, `buildAuthorizeUrl`, `exchangeCodeForToken`, `refreshStravaToken`, `fetchStravaActivities`, `saveIntegration` (upsert), `getValidAccessToken` (refreshes + persists rotated tokens when expired; never touches athleteId).
+- `src/app/api/strava/connect/route.ts`: redirects to Strava authorize with a random `state` in a short-lived httpOnly cookie (CSRF).
+- `src/app/api/strava/callback/route.ts`: verifies state, exchanges code, `saveIntegration`, redirects to `/dashboard?strava=connected|denied|error`.
+- tRPC `strava` router (`src/server/api/routers/strava.ts`, registered in `root.ts`): `status` (connected + athleteId), `sync` (refresh token if needed → fetch activities → filter runs → map → dedup by stravaId → `createMany`; returns `{ imported, skipped }`).
+
+### UI
+- `src/app/dashboard/_components/strava-connect.tsx`: "Connect Strava" link when not connected; "Sync now" button (calls `strava.sync`, then `router.refresh()`) when connected. Wired into the dashboard header next to "Log a run". Dashboard now also fetches `api.strava.status()`.
+
+### Known limitations / next
+- End-to-end untested without a Strava app. When creds are added, test: connect → callback stores integration → Sync imports runs → they appear on the dashboard.
+- Phase 2: webhook subscription (`/api/strava/webhook`) for real-time auto-sync — needs a public HTTPS URL.
+- Tokens plaintext (see security TODO).

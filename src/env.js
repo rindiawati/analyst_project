@@ -13,6 +13,11 @@ export const env = createEnv({
         : z.string().optional(),
     AUTH_DISCORD_ID: z.string(),
     AUTH_DISCORD_SECRET: z.string(),
+    // Optional: Strava integration (Phase 1). App runs without them; the
+    // Strava UI just won't function until they're set.
+    STRAVA_CLIENT_ID: z.string().optional(),
+    STRAVA_CLIENT_SECRET: z.string().optional(),
+    STRAVA_VERIFY_TOKEN: z.string().optional(),
     DATABASE_URL: z.string().url(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
@@ -36,6 +41,9 @@ export const env = createEnv({
     AUTH_SECRET: process.env.AUTH_SECRET,
     AUTH_DISCORD_ID: process.env.AUTH_DISCORD_ID,
     AUTH_DISCORD_SECRET: process.env.AUTH_DISCORD_SECRET,
+    STRAVA_CLIENT_ID: process.env.STRAVA_CLIENT_ID,
+    STRAVA_CLIENT_SECRET: process.env.STRAVA_CLIENT_SECRET,
+    STRAVA_VERIFY_TOKEN: process.env.STRAVA_VERIFY_TOKEN,
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
   },

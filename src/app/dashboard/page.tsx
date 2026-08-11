@@ -12,11 +12,13 @@ import {
 } from "~/lib/stats";
 import { ActivitiesList } from "./_components/activities-list";
 import { StatsSummary } from "./_components/stats-summary";
+import { StravaConnect } from "./_components/strava-connect";
 
 export default async function Dashboard() {
-  const [session, activities] = await Promise.all([
+  const [session, activities, strava] = await Promise.all([
     auth(),
     api.activities.list(),
+    api.strava.status(),
   ]);
 
   const today = new Date();
@@ -42,14 +44,20 @@ export default async function Dashboard() {
         ) : null}
 
         <section className="w-full max-w-xl">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Recent runs</h2>
-            <Link
-              href="/activities/new"
-              className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-accent-contrast transition hover:bg-accent/90"
-            >
-              Log a run
-            </Link>
+            <div className="flex items-center gap-3">
+              <StravaConnect
+                connected={strava.connected}
+                athleteId={strava.athleteId}
+              />
+              <Link
+                href="/activities/new"
+                className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-accent-contrast transition hover:bg-accent/90"
+              >
+                Log a run
+              </Link>
+            </div>
           </div>
           <ActivitiesList activities={activities} />
         </section>
