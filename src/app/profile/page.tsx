@@ -14,7 +14,7 @@ export default async function ProfilePage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-base text-white">
-      <AppHeader email={session?.user?.email} />
+      <AppHeader email={session?.user?.email} backHref="/dashboard" />
       <div className="flex flex-1 flex-col gap-6 px-4 pb-24">
         <h1 className="text-3xl font-extrabold">Profile</h1>
 

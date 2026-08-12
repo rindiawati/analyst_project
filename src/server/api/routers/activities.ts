@@ -24,6 +24,24 @@ export const activitiesRouter = createTRPCRouter({
     });
   }),
 
+  // Activities in a [after, before) date range — for charts and the per-week
+  // detail page. `list` (capped at 20) is too small for multi-month windows.
+  range: protectedProcedure
+    .input(z.object({ after: z.date(), before: z.date().optional() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.activity.findMany({
+        where: {
+          userId: ctx.session.user.id,
+          runDate: {
+            gte: input.after,
+            ...(input.before ? { lt: input.before } : {}),
+          },
+        },
+        orderBy: { runDate: "desc" },
+        take: 500,
+      });
+    }),
+
   get: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {

@@ -2,10 +2,8 @@ import Link from "next/link";
 
 import { AppHeader } from "~/app/_components/app-header";
 import { BottomNav } from "~/app/_components/bottom-nav";
-import { PaceTrendChart } from "~/app/_components/pace-trend-chart";
-import { WeeklyMileageChart } from "~/app/_components/weekly-mileage-chart";
+import { ChartsSection } from "~/app/_components/charts-section";
 import { auth } from "~/server/auth";
-import { weeklyMileage, weeklyPace } from "~/lib/charts";
 import {
   averagePace,
   currentStreak,
@@ -57,22 +55,7 @@ export default async function Dashboard() {
           />
         </section>
 
-        {hasRuns ? (
-          <section className="grid w-full max-w-xl gap-3 sm:grid-cols-2">
-            <div className="rounded-xl bg-surface p-4">
-              <h2 className="mb-2 text-xs uppercase tracking-wide text-accent">
-                Weekly mileage (km)
-              </h2>
-              <WeeklyMileageChart data={weeklyMileage(activities, today)} />
-            </div>
-            <div className="rounded-xl bg-surface p-4">
-              <h2 className="mb-2 text-xs uppercase tracking-wide text-accent">
-                Pace trend (min/km)
-              </h2>
-              <PaceTrendChart data={weeklyPace(activities, today)} />
-            </div>
-          </section>
-        ) : null}
+        {hasRuns ? <ChartsSection /> : null}
 
         <section className="w-full max-w-xl">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

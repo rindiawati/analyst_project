@@ -316,3 +316,14 @@ Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last
 - **Weekly goal:** `goals` router (`get` + `setTarget`) uses the previously-dormant `Goal` model — one effective goal per user (latest row; `targetRunsPerWeek` unused, set to 0). `src/app/dashboard/_components/goal-progress.tsx` is read-only on the dashboard (progress bar of this week's km vs target, or "Set a weekly goal →" link to `/profile` when none) and editable on `/profile`.
 - **App shell (mobile):** `src/app/_components/bottom-nav.tsx` — fixed bottom tab bar (Home / Stats / Add / Profile), `md:hidden`, `usePathname` for active state, "Add" is the accent/primary tab. New pages `/stats` (charts, bigger) and `/profile` (goal edit + Strava + account). Authenticated pages add `pb-24` so content clears the bar.
 - Still ahead: period selector (week/month/year), run-detail page + route map (Strava `summary_polyline`), PR/achievement cards, profile display name + units (km/mi).
+
+## Product layer — Tier 2.5 (interactive charts, goal edit, back nav, week detail)
+
+- **`activities.range({ after, before? })`** query added (take 500) — `list` (20) is too small for multi-month chart windows; range backs the charts and the per-week detail page.
+- **Interactive charts** (`src/app/_components/charts-section.tsx`, client): a **4W / 8W / 12W** period selector drives both the mileage bar chart and the pace line chart over a shared window; shows window **total distance + total duration**. Fetches its own data via `activities.range`. Replaces the static chart cards on dashboard + `/stats`.
+- **Clickable bars**: `weekly-mileage-chart.tsx` is now `"use client"`; clicking a bar selects it (white outline + inline summary "Week of M/D: X km · Yh Zm") with a **Detail →** link. `charts.ts` exports `dateParam` (local YYYY-MM-DD, tz-safe) for the route param.
+- **Week detail page** `/stats/weeks/[start]` (server): parses `start`, normalizes to Monday, fetches `range(after=weekStart, before=weekEnd)`, shows week totals (distance / time / avg pace / run count) + the list of runs. Invalid date → `notFound()`.
+- **Goal edit**: `goal-progress.tsx` editable mode now shows the target + an **Edit** button (collapses to input + Save); read-only dashboard mode unchanged.
+- **Back nav**: `AppHeader` gained an optional `backHref` → "← Back" top-left on sub-pages (`/profile`, `/stats`, `/activities/new`, `/activities/[id]/edit`, week detail). Dashboard (home) has none.
+- `duration.ts` gained `formatDuration(minutes)` → "1h 30m" / "45m" (+ tests).
+- **Known limitation:** dashboard "Total/Longest/Avg pace" stat cards still derive from `activities.list` (20 runs), so they under-count for users with >20 runs (e.g. after a big Strava import). The charts use `range` and are correct; the stat cards should switch to a fuller fetch next.

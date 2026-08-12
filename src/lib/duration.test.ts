@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { durationFromParts, durationToParts } from "./duration";
+import { durationFromParts, durationToParts, formatDuration } from "./duration";
 
 describe("durationFromParts", () => {
   it("converts minutes-only to minutes", () => {
@@ -43,5 +43,21 @@ describe("durationToParts", () => {
         seconds: s,
       });
     }
+  });
+});
+
+describe("formatDuration", () => {
+  it("formats minutes-only durations", () => {
+    expect(formatDuration(45)).toBe("45m");
+  });
+
+  it("formats hour + minute durations", () => {
+    expect(formatDuration(90)).toBe("1h 30m");
+    expect(formatDuration(125)).toBe("2h 5m");
+  });
+
+  it("returns 0m for zero/negative", () => {
+    expect(formatDuration(0)).toBe("0m");
+    expect(formatDuration(-5)).toBe("0m");
   });
 });

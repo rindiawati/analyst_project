@@ -26,3 +26,12 @@ export function durationToParts(totalMinutes: number): DurationParts {
     seconds: totalSeconds % 60,
   };
 }
+
+/** Display a duration (in minutes) as a compact "1h 30m" / "45m" string. */
+export function formatDuration(totalMinutes: number): string {
+  if (!(totalMinutes > 0)) return "0m";
+  const total = Math.round(totalMinutes);
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}

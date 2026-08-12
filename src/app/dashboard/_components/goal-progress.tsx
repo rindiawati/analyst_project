@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { api } from "~/trpc/react";
 
 /**
  * Weekly distance goal. Two modes:
- * - editable (Profile): an input + Save to set/change the target.
- * - read-only (Dashboard): a progress bar of this week's km vs the target,
- *   or a "Set a weekly goal" link to /profile when no target exists.
+ * - editable (Profile): if a goal exists, show it with an "Edit" button; click
+ *   Edit to reveal the input. If no goal, the input shows directly. Save
+ *   collapses back to the value + Edit.
+ * - read-only (Dashboard): a progress bar of this week's km vs the target, or
+ *   a "Set a weekly goal" link to /profile when no target exists.
  */
 export function GoalProgress({
   current,
@@ -20,15 +23,39 @@ export function GoalProgress({
   target: number | null;
   editable?: boolean;
 }) {
+  const router = useRouter();
   const utils = api.useUtils();
   const [value, setValue] = useState(target ? String(target) : "");
+  const [editing, setEditing] = useState(target === null);
   const save = api.goals.setTarget.useMutation({
     onSuccess: async () => {
       await utils.goals.get.invalidate();
+      setEditing(false);
+      router.refresh();
     },
   });
 
   if (editable) {
+    if (!editing) {
+      return (
+        <div className="flex items-center justify-between">
+          <span className="text-white/80">
+            <span className="text-xl font-bold text-white">
+              {target ? target.toFixed(0) : "—"}
+            </span>{" "}
+            <span className="text-sm text-white/50">km / week</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded-full border border-white/20 px-4 py-1.5 text-sm font-semibold text-white/80 transition hover:border-accent hover:text-accent"
+          >
+            Edit
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
@@ -55,9 +82,6 @@ export function GoalProgress({
             {save.isPending ? "Saving…" : "Save"}
           </button>
         </div>
-        {save.isSuccess ? (
-          <span className="text-xs text-white/40">Goal saved.</span>
-        ) : null}
       </div>
     );
   }

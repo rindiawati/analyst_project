@@ -24,6 +24,13 @@ function shortLabel(date: Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
+/** Local YYYY-MM-DD (timezone-safe for route params and parsing). */
+export function dateParam(date: Date): string {
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
 export type WeekBucket = { weekStart: Date; label: string; distance: number };
 export type PaceBucket = { weekStart: Date; label: string; pace: number | null };
 
