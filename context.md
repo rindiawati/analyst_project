@@ -327,3 +327,13 @@ Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last
 - **Back nav**: `AppHeader` gained an optional `backHref` → "← Back" top-left on sub-pages (`/profile`, `/stats`, `/activities/new`, `/activities/[id]/edit`, week detail). Dashboard (home) has none.
 - `duration.ts` gained `formatDuration(minutes)` → "1h 30m" / "45m" (+ tests).
 - **Known limitation:** dashboard "Total/Longest/Avg pace" stat cards still derive from `activities.list` (20 runs), so they under-count for users with >20 runs (e.g. after a big Strava import). The charts use `range` and are correct; the stat cards should switch to a fuller fetch next.
+
+## Product layer — Tier 2.6 (chart-centric dashboard)
+
+Dashboard refocused around the weekly-mileage chart, per request.
+
+- **Removed from dashboard:** the "Recent runs" list (per-run detail is now via the chart → week detail) and the pace trend chart. The dashboard is now: stat cards (kept as KPIs) + goal card + the dominant weekly-mileage chart. `pace-trend-chart.tsx` deleted; `weeklyPace` kept in `charts.ts` as a utility.
+- **Dominant chart:** `charts-section.tsx` renders one full-width, taller (`height=170`) mileage chart with the 4W/8W/12W selector, a **calendar "from" date** to scroll back in time, window totals (distance + duration), and clickable bars → Detail.
+- **Goal edit inline:** `goal-progress.tsx` is now always inline-editable — shows the progress bar (dashboard, with `current`) or the target (/profile) plus an **Edit** button; Edit reveals the input + Save + Cancel. The `editable` prop was removed.
+- **No more /stats page:** deleted `/stats`; the per-week detail moved to **`/weeks/[start]`** and its **Back → /dashboard** directly. `BottomNav` tabs reduced to Home / Add / Profile.
+- **E2E updated:** empty-state asserts the "Log a run" CTA; run-created asserts the chart window total "Total: 5.2 km". The test leaves `runDate` at today (default) so the run lands in the chart's current-week window.

@@ -27,18 +27,23 @@ test("user can register, log in, and log a run", async ({ page }) => {
   await page.click("button[type=submit]");
   await expect(page).toHaveURL(/\/dashboard/);
 
-  // 3. Empty state before any run is logged.
-  await expect(page.getByText("No runs yet")).toBeVisible();
+  // 3. Dashboard loaded for a user with no runs (Recent runs list was removed;
+  //    verify the primary CTA is present instead of the old empty state).
+  await expect(
+    page.getByRole("link", { name: /log a run/i }),
+  ).toBeVisible();
 
   // 4. Log a run.
   await page.getByRole("link", { name: /log a run/i }).click();
   await expect(page).toHaveURL(/\/activities\/new/);
   await page.fill("[name=distance]", "5.2");
   await page.fill("[name=minutes]", "28");
-  await page.fill("[name=runDate]", "2026-01-15");
+  // Leave runDate at its default (today) so the run lands in the chart's
+  // current-week window.
   await page.click("button[type=submit]");
 
-  // 5. Back on dashboard, the run is listed.
+  // 5. Back on dashboard; the run is reflected in the chart window total
+  //    ("Total: 5.2 km ..."). The Recent runs list is gone, so we assert here.
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByText("5.20 km")).toBeVisible();
+  await expect(page.getByText(/Total: 5\.2 km/)).toBeVisible();
 });

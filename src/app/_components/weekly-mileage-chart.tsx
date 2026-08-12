@@ -3,20 +3,23 @@
 import { dateParam, type WeekBucket } from "~/lib/charts";
 
 /**
- * Weekly mileage as a dependency-free SVG bar chart. Bars are clickable when
- * `onSelectWeek` is provided (used by ChartsSection to drill into a week).
+ * Weekly mileage as a dependency-free SVG bar chart. `height` scales the chart
+ * (dashboard renders it tall/dominant). Bars are clickable when `onSelectWeek`
+ * is provided.
  */
 export function WeeklyMileageChart({
   data,
   selectedWeekStart,
   onSelectWeek,
+  height = 110,
 }: {
   data: WeekBucket[];
   selectedWeekStart?: string | null;
   onSelectWeek?: (weekStartParam: string) => void;
+  height?: number;
 }) {
   const W = 320;
-  const H = 110;
+  const H = height;
   const padX = 16;
   const padTop = 8;
   const padBottom = 22;

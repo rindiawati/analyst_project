@@ -53,7 +53,7 @@ export default async function WeekDetailPage({
 
   return (
     <main className="flex min-h-screen flex-col bg-base text-white">
-      <AppHeader email={null} backHref="/stats" />
+      <AppHeader email={null} backHref="/dashboard" />
       <div className="flex flex-1 flex-col gap-6 px-4 pb-24">
         <div>
           <p className="text-xs uppercase tracking-wide text-accent">

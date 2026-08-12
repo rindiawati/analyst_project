@@ -1,27 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { api } from "~/trpc/react";
 
 /**
- * Weekly distance goal. Two modes:
- * - editable (Profile): if a goal exists, show it with an "Edit" button; click
- *   Edit to reveal the input. If no goal, the input shows directly. Save
- *   collapses back to the value + Edit.
- * - read-only (Dashboard): a progress bar of this week's km vs the target, or
- *   a "Set a weekly goal" link to /profile when no target exists.
+ * Weekly distance goal, always inline-editable.
+ * - No goal yet: shows an input to set one.
+ * - Goal exists: shows the progress bar (when `current` is provided) or just
+ *   the target, with an "Edit" button to change it inline.
  */
 export function GoalProgress({
   current,
   target,
-  editable = false,
 }: {
   current?: number;
   target: number | null;
-  editable?: boolean;
 }) {
   const router = useRouter();
   const utils = api.useUtils();
@@ -35,27 +30,7 @@ export function GoalProgress({
     },
   });
 
-  if (editable) {
-    if (!editing) {
-      return (
-        <div className="flex items-center justify-between">
-          <span className="text-white/80">
-            <span className="text-xl font-bold text-white">
-              {target ? target.toFixed(0) : "—"}
-            </span>{" "}
-            <span className="text-sm text-white/50">km / week</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="rounded-full border border-white/20 px-4 py-1.5 text-sm font-semibold text-white/80 transition hover:border-accent hover:text-accent"
-          >
-            Edit
-          </button>
-        </div>
-      );
-    }
-
+  if (editing) {
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
@@ -81,37 +56,62 @@ export function GoalProgress({
           >
             {save.isPending ? "Saving…" : "Save"}
           </button>
+          {target !== null ? (
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="text-sm text-white/40 hover:text-white"
+            >
+              Cancel
+            </button>
+          ) : null}
         </div>
       </div>
     );
   }
 
-  if (!target) {
-    return (
-      <Link
-        href="/profile"
-        className="text-sm text-accent underline hover:opacity-80"
-      >
-        Set a weekly goal →
-      </Link>
-    );
-  }
+  // editing is initialized to (target === null), so reaching here means a
+  // goal exists. Guard keeps TypeScript happy (target is non-null below).
+  if (target === null) return null;
 
   const pct = Math.min(100, ((current ?? 0) / target) * 100);
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex justify-between text-sm">
-        <span className="text-white/60">Weekly goal</span>
-        <span className="text-white/80">
-          {(current ?? 0).toFixed(1)} / {target.toFixed(0)} km
-        </span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-accent"
-          style={{ width: `${pct}%` }}
-        />
+    <div className="flex flex-col gap-2">
+      {current !== undefined ? (
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-white/60">Weekly goal</span>
+            <span className="text-white/80">
+              {current.toFixed(1)} / {target.toFixed(0)} km
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-accent"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-white/80">
+          <span className="text-xl font-bold text-white">
+            {target.toFixed(0)}
+          </span>{" "}
+          km / week
+        </div>
+      )}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            setValue(target ? String(target) : "");
+            setEditing(true);
+          }}
+          className="rounded-full border border-white/20 px-4 py-1 text-xs font-semibold text-white/80 transition hover:border-accent hover:text-accent"
+        >
+          Edit
+        </button>
       </div>
     </div>
   );

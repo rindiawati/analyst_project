@@ -22,7 +22,7 @@ export default async function ProfilePage() {
           <h2 className="text-xs uppercase tracking-wide text-accent">
             Weekly distance goal
           </h2>
-          <GoalProgress target={goal?.targetDistance ?? null} editable />
+          <GoalProgress target={goal?.targetDistance ?? null} />
         </section>
 
         <section className="rounded-xl bg-surface p-4">
