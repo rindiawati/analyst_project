@@ -80,19 +80,36 @@ export default async function WeekDetailPage({
               {runs.map((run) => (
                 <li
                   key={run.id}
-                  className="flex items-center justify-between rounded-xl bg-surface px-5 py-4"
+                  className="rounded-xl bg-surface px-5 py-4"
                 >
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-white">
-                      {run.distance.toFixed(2)} km
-                    </span>
-                    <span className="text-xs text-white/50">
-                      {dayFmt.format(run.runDate)}
-                    </span>
+                  <div className="mb-2 text-xs text-white/50">
+                    {dayFmt.format(run.runDate)}
                   </div>
-                  <div className="flex gap-4 text-sm text-white/70">
-                    <span>{formatDuration(run.duration)}</span>
-                    <span>{formatPace(run.averagePace)} /km</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-accent">
+                        Distance
+                      </div>
+                      <div className="text-sm font-semibold text-white">
+                        {run.distance.toFixed(2)} km
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-accent">
+                        Time
+                      </div>
+                      <div className="text-sm font-semibold text-white">
+                        {formatDuration(run.duration)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-accent">
+                        Pace
+                      </div>
+                      <div className="text-sm font-semibold text-white">
+                        {formatPace(run.averagePace)} /km
+                      </div>
+                    </div>
                   </div>
                 </li>
               ))}

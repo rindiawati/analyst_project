@@ -6,6 +6,7 @@ import Link from "next/link";
 import { WeeklyMileageChart } from "~/app/_components/weekly-mileage-chart";
 import { weeklyMileage } from "~/lib/charts";
 import { formatDuration } from "~/lib/duration";
+import { formatPace } from "~/lib/pace";
 import { api } from "~/trpc/react";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -76,6 +77,7 @@ export function ChartsSection() {
   // Selected-week totals.
   let selectedDistance = 0;
   let selectedDuration = 0;
+  let selectedPace = 0;
   let selectedLabel = "";
   if (selected) {
     const [ys, ms, ds] = selected.split("-");
@@ -94,6 +96,7 @@ export function ChartsSection() {
         selectedDuration += r.duration;
       }
     }
+    selectedPace = selectedDistance > 0 ? selectedDuration / selectedDistance : 0;
   }
 
   return (
@@ -159,10 +162,10 @@ export function ChartsSection() {
       />
 
       {selected ? (
-        <div className="mt-3 flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-xs">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs">
           <span className="text-white/70">
             Week of {selectedLabel}: {selectedDistance.toFixed(1)} km ·{" "}
-            {formatDuration(selectedDuration)}
+            {formatDuration(selectedDuration)} · {formatPace(selectedPace)} /km
           </span>
           <Link
             href={`/weeks/${selected}`}
