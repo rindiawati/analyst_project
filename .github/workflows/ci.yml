@@ -60,7 +60,7 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       # Real Postgres so the production build (started by Playwright via
       # `npm run preview`) can connect, migrate, and the critical-path test
@@ -98,8 +98,29 @@ jobs:
       - name: Apply Prisma migrations
         run: npx prisma migrate deploy
 
-      - name: Install Playwright browser (chromium + OS deps)
-        run: npx playwright install --with-deps chromium
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install OS deps for Chromium (apt only, no CDN download)
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright browser (chromium)
+        # The chromium CDN download intermittently stalls silently. A killed
+        # `--with-deps` install also leaves an apt/dpkg lock that instantly
+        # fails any retry — so apt deps run separately above, and this step
+        # is a pure download that is safe to kill and retry.
+        run: |
+          for i in 1 2 3; do
+            timeout 300 npx playwright install chromium && exit 0
+            echo "::warning::chromium download attempt $i failed or stalled — retrying"
+            sleep 10
+          done
+          echo "::error::chromium download failed after 3 attempts"
+          exit 1
 
       - name: Run E2E
         # playwright.config.ts boots its own production build (`npm run preview`)
