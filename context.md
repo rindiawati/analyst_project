@@ -15,7 +15,7 @@ Individuals who run for fitness, recreation, or training and want to track, anal
 - Deploy: Vercel
 
 ## Directory Structure
-- `src/app/` — App Router: pages (`/`, `/login`, `/register`, `/dashboard`) + `api/` routes
+- `src/app/` — App Router: pages (`/`, `/login`, `/register`, `/dashboard`, `/activities/new`) + `api/` routes
 - `src/app/api/` — route handlers: `register`, `activity`, `auth/[...nextauth]`, `trpc/[trpc]`
 - `src/server/api/` — tRPC: `root.ts` (appRouter), `trpc.ts` (context + procedures), `routers/`
 - `src/server/auth/` — NextAuth `config.ts` (edge) + `index.ts` (full)
@@ -25,7 +25,8 @@ Individuals who run for fitness, recreation, or training and want to track, anal
 - `src/middleware.ts` — route protection
 - `prisma/schema.prisma` + `prisma/migrations/`
 - `plans/` — per-feature planning docs (e.g. `runtrackAI.md`)
-- Tests are co-located as `*.test.ts` (no separate `tests/` dir yet)
+- `e2e/` — Playwright E2E specs (e.g. `core.spec.ts`, the critical register→login→log-a-run path); `playwright.config.ts` boots a dedicated dev server on `:3001`
+- Unit tests are co-located as `*.test.ts` (no separate `tests/` dir yet)
 
 ## Data Models
 (from `prisma/schema.prisma`)
@@ -75,9 +76,13 @@ A weekly running target.
 ## API Surface
 
 ### tRPC (mounted at `/api/trpc`)
-- `auth.register` — **public** mutation. Input `{ email, password(min 8) }` → `{ id, email }`. Trims+lowercases email, hashes password (bcrypt cost 12), rejects duplicate email.
-- `activities.delete` — **protected** mutation. Input `{ id }` → `{ id }`. Loads the activity, enforces ownership via `checkActivityOwnership()` in `src/lib/activities.ts` (FORBIDDEN if not owner, NOT_FOUND if missing), then `db.activity.delete`. Cascade: deleting a User removes their Activities (schema-level). Ownership helper is unit-tested (`src/lib/activities.test.ts`).
-- (Goal router not yet implemented. The `/admin/activities` page and the create/list/edit procedures are planned, not yet built.)
+- `auth.register` — **public** mutation. Input `{ email, password(min 8) }` → `{ id, email }`. Trims+lowercases email, hashes password (bcrypt cost 12), rejects duplicate email (throws `CONFLICT`). IP-rate-limited (10/min).
+- `activities.list` — **protected** query. No input → the caller's most recent 20 `Activity` rows (`runDate desc`), scoped to `session.user.id`. Used by the `/dashboard` "Recent runs" list + as the source for dashboard stats.
+- `activities.get` — **protected** query. Input `{ id }` → the `Activity`. Ownership-enforced (NOT_FOUND if missing or not the caller's — existence of other users' runs is never leaked). Used by `/activities/[id]/edit`.
+- `activities.create` — **protected** mutation. Input `{ distance(km, >0), duration(min, >0), runDate(Date) }` → the created `Activity`. `averagePace` (min/km) is derived server-side as `duration / distance` (never trusted from the client). Used by the `/activities/new` form.
+- `activities.update` — **protected** mutation. Input `{ id, distance(>0), duration(>0), runDate(Date) }` → updated `Activity`. Ownership-enforced (same NOT_FOUND/FORBIDDEN contract as delete); recomputes `averagePace` server-side. Used by `/activities/[id]/edit`.
+- `activities.delete` — **protected** mutation. Input `{ id }` → `{ id }`. Loads the activity, enforces ownership via `checkActivityOwnership()` in `src/lib/activities.ts` (FORBIDDEN if not owner, NOT_FOUND if missing), then `db.activity.delete`. Ownership helper is unit-tested (`src/lib/activities.test.ts`). Cascade: deleting a User removes their Activities (schema-level).
+- (Goal router not yet implemented — model exists, no API/UI.)
 
 Procedure helpers in `src/server/api/trpc.ts`: `publicProcedure` (session optional) and `protectedProcedure` (requires `ctx.session.user`, throws UNAUTHORIZED).
 
@@ -94,7 +99,7 @@ Procedure helpers in `src/server/api/trpc.ts`: `publicProcedure` (session option
 NextAuth (Auth.js v5 beta) with the **Credentials** provider (email + password). Passwords hashed with `bcryptjs` (`bcrypt.hash(pw, 12)` on register, `bcrypt.compare` on login). Plaintext is never stored. Session strategy: JWT.
 
 ### Where the config lives
-- `src/server/auth/config.ts` — edge-safe base config: `session: { strategy: "jwt" }`, `pages.signIn = "/login"`, the `authorized` callback (protects `/dashboard`), and the `session` callback (exposes `user.id`). Imported by the middleware.
+- `src/server/auth/config.ts` — edge-safe base config: `session: { strategy: "jwt" }`, `pages.signIn = "/login"`, **`trustHost: true`** (required for any non-Vercel host — see "Latent auth bug fixed" under Step 2), the `authorized` callback (protects `/dashboard`), and the `session` callback (exposes `user.id`). Imported by the middleware.
 - `src/server/auth/index.ts` — full config: spreads `authConfig`, adds `PrismaAdapter(db)` and the Credentials `authorize`. Used by route handlers and server components.
 - `src/middleware.ts` — builds `auth` from the edge-safe config; matcher `/dashboard/:path*`.
 - `src/app/api/auth/[...nextauth]/route.ts` — exposes `GET`/`POST`.
@@ -140,15 +145,16 @@ Validated in `src/env.js` (t3-env + zod). Copy `.env.example` → `.env`.
 ## Testing
 
 ### Test Runner
-Vitest (unit tests). Coverage via `@vitest/coverage-v8`.
+Vitest (unit tests). Coverage via `@vitest/coverage-v8`. Playwright (E2E) for the critical user flow.
 
 ### How to Run Tests
 ```bash
-npm run test      # watch mode (vitest)
+npm run test      # watch mode (vitest, unit tests only)
+npm run e2e       # Playwright E2E (boots its own dev server on :3001)
 npm run check     # eslint . + tsc --noEmit
 npm run typecheck # tsc only
 ```
-Tests are co-located next to source as `*.test.ts` (e.g. `src/lib/streak.test.ts`, `src/lib/activities.test.ts`). Playwright (e2e) is planned but not yet installed. Empty T3 boilerplate test stubs (`auth.test.ts`, `trpc.test.ts`) were removed — recreate with actual tests when needed.
+Unit tests are co-located next to source as `*.test.ts` (e.g. `src/lib/streak.test.ts`, `src/lib/activities.test.ts`, `src/lib/rateLimit.test.ts`). E2E specs live in `e2e/` (e.g. `e2e/core.spec.ts`) and are excluded from vitest discovery via `vitest.config.ts`. Empty T3 boilerplate test stubs (`auth.test.ts`, `trpc.test.ts`) were removed — recreate with actual tests when needed.
 
 ## Security (Lab 5 — Build the Shield)
 
@@ -199,3 +205,135 @@ The pipeline in `.github/workflows/ci.yml` runs on every PR and push to `main`, 
 - `npm run test` is watch mode locally; CI uses `npx vitest run --coverage` (one-shot). Coverage provider is `v8` via `vitest.config.ts`.
 - Locally all six gates are verified green: lint 0 errors, typecheck clean, 10/10 tests (100% coverage on `src/lib`), `npm audit` 0 vulnerabilities, build succeeds.
 - To make the pipeline actually gate merges, enable branch protection on `main` and require both `gate` and `secrets` as required status checks (Settings → Branches).
+
+## Polish the Edges (Step 1)
+
+Edge states wired across the App Router so no user ever sees a blank screen, a spinner, a raw stack trace, or an un-throttled endpoint.
+
+### Empty states
+- One reusable component, reused everywhere: `src/app/_components/empty-state.tsx` (`EmptyState` — friendly `title` + `message` + optional `action: { label, href }`). Never pass an `action` until the destination route exists (so no dead links).
+- Applied in `src/app/dashboard/_components/activities-list.tsx`: 0 runs → "No runs yet".
+
+### Loading states (skeletons, not spinners)
+- Reusable `src/app/_components/skeleton.tsx` (`Skeleton` = `animate-pulse` block).
+- `src/app/loading.tsx` (global) and `src/app/dashboard/loading.tsx` (dashboard layout skeleton) are used by Next's route-level `<Suspense>` automatically during navigation/streaming.
+
+### Error states
+- `src/app/not-found.tsx` — custom 404, friendly message + CTA to `/dashboard`.
+- `src/app/error.tsx` — global route error boundary (client component). `console.error(error)` logs server-side; users see a friendly message + "Try again" (`reset`). No stack traces leaked.
+- `src/app/dashboard/error.tsx` — dashboard-scoped variant ("Couldn't load your dashboard").
+
+### Rate limiting (basic, IP-based)
+- Pure, zero-dependency fixed-window limiter in `src/lib/rateLimit.ts` (co-located unit tests in `src/lib/rateLimit.test.ts`): `rateLimit(store, key, { windowMs, max }, now)` operates on an injected store so it's deterministic; `rateLimitKey(ip, scope)` namespaces buckets per endpoint; `ipRateLimit(ip, opts, scope)` + `getClientIp(headers)` are the integration helpers (reads `x-forwarded-for` → `x-real-ip` → `"unknown"`).
+- Applied per endpoint (each gets its own bucket via `rateLimitKey`):
+  - **auth** `POST /api/register` + tRPC `auth.register` — 10 req/min/IP (REST returns `429` + `Retry-After`; tRPC throws `TOO_MANY_REQUESTS` via `createRateLimitMiddleware("register", …)` reading `ctx.ip`).
+  - **writes** tRPC `activities.create` + `activities.update` + `activities.delete` — 30 req/min/IP (generous for normal data entry, stops brute force). Applied with `.use(createRateLimitMiddleware("create"|"update"|"delete", …))`.
+- **Limitation / production note:** the in-memory store is per-process, so on Vercel (many serverless instances) each instance keeps its own counter — an attacker can effectively multiply the limit by the number of warm instances. For production, swap `sharedStore` for a centralized one. **Recommended lightweight library for this stack: `@upstash/ratelimit` + `@upstash/redis`** (edge-friendly, REST based, no extra infra beyond a free Upstash DB; add `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` to `src/env.js` + `.env.example` when adopted). The limiter's pure signature is intentionally store-agnostic to make that swap a one-line change.
+
+## Step 2 — End-to-End test (RED→GREEN) + Create-a-run flow
+
+The critical path got a Playwright E2E spec written first (RED), then the missing "log a run" feature was implemented until it went GREEN.
+
+### E2E (Playwright)
+- Installed `@playwright/test` (devDep) + chromium browser (`npm run e2e:install`). Run with `npm run e2e`.
+- `e2e/core.spec.ts` covers: register → login (no auto-login after register) → dashboard empty state → `/activities/new` form → run appears on dashboard. Excluded from vitest via `vitest.config.ts`.
+- `playwright.config.ts` runs E2E against a **production build on port 3001** (`npm run preview -- --port 3001` = `next build && next start`). Production mode was chosen over `next dev` because (a) dev has per-route cold-compilation that made the NextAuth callback flaky on first hit, and (b) it tests the actual deployed artifact. The downside: a full build per run (~1 min). `reuseExistingServer` lets you keep one warm locally.
+
+### Create-a-run feature
+- `activities.create` mutation (`src/server/api/routers/activities.ts`): input `{ distance(>0), duration(>0), runDate(Date) }`; `averagePace = duration / distance` derived server-side (min/km).
+- `/activities/new` (`src/app/activities/new/page.tsx`): client form using `api.activities.create.useMutation()`; on success invalidates `activities.list` and `router.push("/dashboard")`.
+- Dashboard (`src/app/dashboard/page.tsx`): a "Log a run" primary link in the "Recent runs" header (the single, always-available CTA — the empty state intentionally stays message-only to avoid duplicate/named-link collisions in the E2E selector).
+
+### Latent auth bug fixed (found via E2E on a production build)
+- Added `trustHost: true` to `src/server/auth/config.ts`. Auth.js v5 only auto-trusts the host on Vercel; on any other host (localhost under `next start`, self-hosted, Docker, other platforms) it throws `UntrustedHost` and **every auth request fails**. Without this, the app's login would break on any non-Vercel deployment — `next dev` hid it because dev mode auto-trusts localhost. Now auth works in production mode everywhere.
+
+### CI
+- `.github/workflows/ci.yml` gained an `e2e` job (alongside `gate` + `secrets`): a `postgres:16` service container + throwaway `DATABASE_URL`/`AUTH_SECRET`/discord dummies → `npm ci` → `npx prisma migrate deploy` → `npx playwright install --with-deps chromium` → `npx playwright test` → uploads the HTML report as an artifact. To gate merges on it, add `e2e` to required status checks under branch protection (same as `gate`/`secrets`).
+
+### Notes / known follow-ups
+- E2E registers a fresh `e2e+${Date.now()}@example.com` user each run against the DB (accumulates; acceptable for MVP). Don't fan out into many register-based tests within a minute (register is 10/min/IP; all localhost traffic shares the `register` bucket).
+- Remaining hardening (not blockers): move the in-memory limiter store to `@upstash/ratelimit` for multi-instance prod; make the E2E test idempotent (clean the test user's runs) if the suite grows.
+
+## Product layer — Tier 1 (stats, edit, delete UI)
+
+Closes the gap that the dashboard "only showed a list." Now a logged-in user sees summary stats and can edit/delete runs — all using logic/data that mostly already existed.
+
+### Dashboard stats
+- `src/lib/stats.ts` (pure, co-located `stats.test.ts`, 15 tests): `totalDistance`, `longestRun`, `distanceThisWeek` (Mon–Sun week), `averagePace`, `currentStreak`.
+- `currentStreak` is the dashboard-facing streak: counts consecutive run-days back from today, but if today has no run yet it still counts from yesterday (streak not shown as broken mid-day). This is deliberately separate from the stricter `streakLength` in `streak.ts` (which returns 0 unless you ran today); `streakLength` is kept as-is for its tested contract.
+- `StatsSummary` (`src/app/dashboard/_components/stats-summary.tsx`) renders 5 cards (Total, Longest, This week, Avg pace, Streak); only shown when the user has ≥1 run (otherwise the empty state alone).
+- Computed server-side in `dashboard/page.tsx` from the `activities.list` data — no new query.
+
+### Per-row actions
+- `DeleteActivityButton` (`src/app/dashboard/_components/delete-activity-button.tsx`): client component, calls `activities.delete`, then `router.refresh()` so the dashboard server component re-renders and the row disappears.
+- Edit: link per row → `/activities/[id]/edit` (see API surface `activities.get`/`update`). Edit page catches the ownership error and calls `notFound()`, so other users' runs surface as 404 (no existence leak).
+
+### Shared form
+- `src/app/_components/activity-form.tsx` backs both `/activities/new` (create) and `/activities/[id]/edit` (update) — one component picks the mutation from whether `id` is passed, keeping validation/labels/styling in sync.
+
+### Still ahead (not blockers)
+- `Goal` model still has no router/UI.
+- No charts/analytics yet (the "analyze" layer — Tier 2).
+- Strava import done (Phase 1); Garmin/Apple Health not started.
+
+## Product layer — Tier 1.5 (UI refresh)
+
+- **Theme (Adizero "Solar Green"):** tokens in `src/styles/globals.css` via Tailwind v4 `@theme` — `--color-base` (`#0b0b0d`, near-black bg), `--color-surface` (`#17171c`, cards), `--color-accent` (`#c6ff00`, lime), `--color-accent-contrast`. Use as `bg-base` / `bg-surface` / `text-accent` / `bg-accent text-accent-contrast`. Replaces the old purple gradient everywhere. **Dev gotcha:** adding `@theme` tokens needs a `.next` clear + dev restart, else the dev server serves stale CSS (production build picks them up fine).
+- **App bar:** `src/app/_components/app-header.tsx` shows the account email (small) + a Logout button in the top-right corner on authenticated pages (dashboard + run forms). The old `dashboard/_components/logout-button.tsx` was removed.
+- **Duration entry:** the run form (`activity-form.tsx`) now takes hours/minutes/seconds (3 inputs) instead of a single minutes field. Conversion lives in `src/lib/duration.ts` (`durationFromParts` / `durationToParts`, + tests); the form combines to minutes (how `Activity.duration` is stored). E2E fills `[name=minutes]`.
+- **Pace format:** `src/lib/pace.ts` `formatPace(minPerKm)` renders pace as runner-friendly `M:SS` (e.g. `7.747` → `7:44`) via the seconds/distance method (truncate to the second, with a tiny epsilon for float safety). Applied in the run row and the Avg-pace stat card.
+- **Avg pace corrected:** `stats.averagePace` is now **time-weighted** (`totalDuration / totalDistance`), not the arithmetic mean of per-run paces (which over-weighted short runs).
+
+## Strava integration — Phase 1 (connect + manual sync)
+
+Phase 1 only: OAuth "Connect Strava" + a one-shot "Sync now" that pulls the last 365 days of runs. Auto-sync via webhook is Phase 2 (not built). **Verified working end-to-end** with a real Strava API app (`STRAVA_CLIENT_ID`/`STRAVA_CLIENT_SECRET` in `.env`, callback domain = `localhost`).
+
+### Data model
+- `prisma/schema.prisma`: new `StravaIntegration` model (one per user, `userId @unique`): `athleteId`, `accessToken`, `refreshToken`, `expiresAt`, `scope`. Added `Activity.stravaId String? @unique` for import dedup. Migration `20260811150000_add_strava_integration`.
+- **Security TODO:** tokens are stored plaintext. Encrypt at rest (needs an `ENCRYPTION_KEY`) before any real deployment.
+
+### Config (optional)
+- `src/env.js` + `.env.example`: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_VERIFY_TOKEN` — all `.optional()`, so the app runs without them; the Strava UI just no-ops until they're set. Create an app at `developers.strava.com`; the redirect URI registered there must be `<origin>/api/strava/callback` (e.g. `http://localhost:3000/api/strava/callback`).
+
+### Layers
+- `src/lib/strava.ts` (pure, tested `strava.test.ts`): `isRunActivity` (Run + VirtualRun), `mapStravaActivity` (m→km, s→min, `averagePace = duration/distance`, `start_date_local`→runDate, `String(id)`→stravaId).
+- `src/server/strava.ts` (server-only HTTP): `isStravaConfigured`, `buildAuthorizeUrl`, `exchangeCodeForToken`, `refreshStravaToken`, `fetchStravaActivities`, `saveIntegration` (upsert), `getValidAccessToken` (refreshes + persists rotated tokens when expired; never touches athleteId).
+- `src/app/api/strava/connect/route.ts`: redirects to Strava authorize with a random `state` in a short-lived httpOnly cookie (CSRF).
+- `src/app/api/strava/callback/route.ts`: verifies state, exchanges code, `saveIntegration`, redirects to `/dashboard?strava=connected|denied|error`.
+- tRPC `strava` router (`src/server/api/routers/strava.ts`, registered in `root.ts`): `status` (connected + athleteId), `sync` (refresh token if needed → fetch activities → filter runs → map → dedup by stravaId → `createMany`; returns `{ imported, skipped }`).
+
+### UI
+- `src/app/dashboard/_components/strava-connect.tsx`: "Connect Strava" link when not connected; "Sync now" button (calls `strava.sync`, then `router.refresh()`) when connected. Wired into the dashboard header next to "Log a run". Dashboard now also fetches `api.strava.status()`.
+
+### Known limitations / next
+- End-to-end **verified working**: connect → callback stores integration → Sync imports runs → they appear on the dashboard + stats. (Phase 1 pulls the last 365 days on each Sync; re-syncs dedup by `stravaId`.)
+- Phase 2: webhook subscription (`/api/strava/webhook`) for real-time auto-sync — needs a public HTTPS URL + `STRAVA_VERIFY_TOKEN`.
+- Tokens plaintext (see security TODO).
+
+## Product layer — Tier 2 (charts, goals, app shell)
+
+- **Charts (no dependency):** `src/lib/charts.ts` (pure, tested) — `weeklyMileage` + `weeklyPace` (Mon–Sun weeks, default last 8). Rendered as dependency-free SVG: `src/app/_components/weekly-mileage-chart.tsx` (bars) and `pace-trend-chart.tsx` (line; lower pace = faster = plotted higher; no-run weeks leave a gap; needs ≥2 run-weeks). Shown on the dashboard (when ≥1 run) and `/stats`.
+- **Weekly goal:** `goals` router (`get` + `setTarget`) uses the previously-dormant `Goal` model — one effective goal per user (latest row; `targetRunsPerWeek` unused, set to 0). `src/app/dashboard/_components/goal-progress.tsx` is read-only on the dashboard (progress bar of this week's km vs target, or "Set a weekly goal →" link to `/profile` when none) and editable on `/profile`.
+- **App shell (mobile):** `src/app/_components/bottom-nav.tsx` — fixed bottom tab bar (Home / Stats / Add / Profile), `md:hidden`, `usePathname` for active state, "Add" is the accent/primary tab. New pages `/stats` (charts, bigger) and `/profile` (goal edit + Strava + account). Authenticated pages add `pb-24` so content clears the bar.
+- Still ahead: period selector (week/month/year), run-detail page + route map (Strava `summary_polyline`), PR/achievement cards, profile display name + units (km/mi).
+
+## Product layer — Tier 2.5 (interactive charts, goal edit, back nav, week detail)
+
+- **`activities.range({ after, before? })`** query added (take 500) — `list` (20) is too small for multi-month chart windows; range backs the charts and the per-week detail page.
+- **Interactive charts** (`src/app/_components/charts-section.tsx`, client): a **4W / 8W / 12W** period selector drives both the mileage bar chart and the pace line chart over a shared window; shows window **total distance + total duration**. Fetches its own data via `activities.range`. Replaces the static chart cards on dashboard + `/stats`.
+- **Clickable bars**: `weekly-mileage-chart.tsx` is now `"use client"`; clicking a bar selects it (white outline + inline summary "Week of M/D: X km · Yh Zm") with a **Detail →** link. `charts.ts` exports `dateParam` (local YYYY-MM-DD, tz-safe) for the route param.
+- **Week detail page** `/stats/weeks/[start]` (server): parses `start`, normalizes to Monday, fetches `range(after=weekStart, before=weekEnd)`, shows week totals (distance / time / avg pace / run count) + the list of runs. Invalid date → `notFound()`.
+- **Goal edit**: `goal-progress.tsx` editable mode now shows the target + an **Edit** button (collapses to input + Save); read-only dashboard mode unchanged.
+- **Back nav**: `AppHeader` gained an optional `backHref` → "← Back" top-left on sub-pages (`/profile`, `/stats`, `/activities/new`, `/activities/[id]/edit`, week detail). Dashboard (home) has none.
+- `duration.ts` gained `formatDuration(minutes)` → "1h 30m" / "45m" (+ tests).
+- **Known limitation:** dashboard "Total/Longest/Avg pace" stat cards still derive from `activities.list` (20 runs), so they under-count for users with >20 runs (e.g. after a big Strava import). The charts use `range` and are correct; the stat cards should switch to a fuller fetch next.
+
+## Product layer — Tier 2.6 (chart-centric dashboard)
+
+Dashboard refocused around the weekly-mileage chart, per request.
+
+- **Removed from dashboard:** the "Recent runs" list (per-run detail is now via the chart → week detail) and the pace trend chart. The dashboard is now: stat cards (kept as KPIs) + goal card + the dominant weekly-mileage chart. `pace-trend-chart.tsx` deleted; `weeklyPace` kept in `charts.ts` as a utility.
+- **Dominant chart:** `charts-section.tsx` renders one full-width, taller (`height=170`) mileage chart with the 4W/8W/12W selector, a **calendar "from" date** to scroll back in time, window totals (distance + duration), and clickable bars → Detail.
+- **Goal edit inline:** `goal-progress.tsx` is now always inline-editable — shows the progress bar (dashboard, with `current`) or the target (/profile) plus an **Edit** button; Edit reveals the input + Save + Cancel. The `editable` prop was removed.
+- **No more /stats page:** deleted `/stats`; the per-week detail moved to **`/weeks/[start]`** and its **Back → /dashboard** directly. `BottomNav` tabs reduced to Home / Add / Profile.
+- **E2E updated:** empty-state asserts the "Log a run" CTA; run-created asserts the chart window total "Total: 5.2 km". The test leaves `runDate` at today (default) so the run lands in the chart's current-week window.

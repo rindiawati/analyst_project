@@ -56,3 +56,61 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      # Real Postgres so the production build (started by Playwright via
+      # `npm run preview`) can connect, migrate, and the critical-path test
+      # can actually register + log a run.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: runtrack_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d runtrack_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Reach the service container on localhost. All values are throwaway
+      # CI-only secrets; nothing real lives here.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/runtrack_test
+      AUTH_SECRET: ci-e2e-throwaway-secret-not-for-production-0123456789abcdef
+      # Required by src/env.js schema but unused by the Credentials-only flow.
+      AUTH_DISCORD_ID: unused
+      AUTH_DISCORD_SECRET: unused
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply Prisma migrations
+        run: npx prisma migrate deploy
+
+      - name: Install Playwright browser (chromium + OS deps)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E
+        # playwright.config.ts boots its own production build (`npm run preview`)
+        # on :3001 (CI does not reuse an existing server); the build inherits
+        # this job's env, and `trustHost: true` lets auth work on localhost.
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

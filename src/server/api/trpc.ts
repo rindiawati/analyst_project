@@ -13,6 +13,11 @@ import { ZodError } from "zod";
 
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
+import {
+  getClientIp,
+  ipRateLimit,
+  type RateLimitOptions,
+} from "~/lib/rateLimit";
 
 /**
  * 1. CONTEXT
@@ -32,6 +37,7 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
   return {
     db,
     session,
+    ip: getClientIp(opts.headers),
     ...opts,
   };
 };
@@ -100,6 +106,31 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 
   return result;
 });
+
+/**
+ * Factory for an IP-based rate-limit middleware. Attach with `.use(...)` on any
+ * procedure that needs per-client throttling (e.g. auth + write endpoints).
+ * Each endpoint must pass its own `name` so it gets an independent bucket
+ * (see `rateLimitKey`). Throws `TOO_MANY_REQUESTS` (HTTP 429) when the fixed
+ * window is exhausted.
+ *
+ * Backed by the in-memory limiter in `src/lib/rateLimit.ts`; see the note there
+ * about swapping in `@upstash/ratelimit` for multi-instance production.
+ */
+export const createRateLimitMiddleware = (
+  name: string,
+  options: RateLimitOptions,
+) =>
+  t.middleware(({ ctx, next }) => {
+    const result = ipRateLimit(ctx.ip, options, name);
+    if (!result.ok) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: `Too many requests. Try again in ${result.retryAfterSeconds}s.`,
+      });
+    }
+    return next();
+  });
 
 /**
  * Public (unauthenticated) procedure

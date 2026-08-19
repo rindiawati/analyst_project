@@ -3,13 +3,29 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 import { db } from "~/server/db";
+import { getClientIp, ipRateLimit } from "~/lib/rateLimit";
 
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
 });
 
+// 10 registrations / minute per IP — matches the tRPC auth.register limit.
+const REGISTER_LIMIT = { windowMs: 60_000, max: 10 };
+
 export async function POST(request: Request) {
+  const ip = getClientIp(request.headers);
+  const limited = ipRateLimit(ip, REGISTER_LIMIT, "register");
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(limited.retryAfterSeconds) },
+      },
+    );
+  }
+
   try {
     const parsed = registerSchema.safeParse(await request.json());
 
