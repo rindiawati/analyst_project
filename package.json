@@ -60,6 +60,9 @@
     "typescript-eslint": "^8.27.0",
     "vitest": "^4.1.10"
   },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0"
+  },
   "ct3aMetadata": {
     "initVersion": "7.40.0"
   },
