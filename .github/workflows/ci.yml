@@ -60,7 +60,7 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       # Real Postgres so the production build (started by Playwright via
       # `npm run preview`) can connect, migrate, and the critical-path test
@@ -98,8 +98,20 @@ jobs:
       - name: Apply Prisma migrations
         run: npx prisma migrate deploy
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install Playwright browser (chromium + OS deps)
-        run: npx playwright install --with-deps chromium
+        # The chromium CDN download intermittently stalls silently (2 of 3
+        # runs hung for 14+ min until the job timeout). A hard per-attempt
+        # timeout + one retry, plus the cache above, keeps this reliable.
+        run: |
+          timeout 420 npx playwright install --with-deps chromium && exit 0
+          echo "::warning::First install attempt failed or stalled — retrying once"
+          timeout 420 npx playwright install --with-deps chromium
 
       - name: Run E2E
         # playwright.config.ts boots its own production build (`npm run preview`)
