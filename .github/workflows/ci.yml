@@ -103,15 +103,24 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
 
-      - name: Install Playwright browser (chromium + OS deps)
-        # The chromium CDN download intermittently stalls silently (2 of 3
-        # runs hung for 14+ min until the job timeout). A hard per-attempt
-        # timeout + one retry, plus the cache above, keeps this reliable.
+      - name: Install OS deps for Chromium (apt only, no CDN download)
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright browser (chromium)
+        # The chromium CDN download intermittently stalls silently. A killed
+        # `--with-deps` install also leaves an apt/dpkg lock that instantly
+        # fails any retry — so apt deps run separately above, and this step
+        # is a pure download that is safe to kill and retry.
         run: |
-          timeout 420 npx playwright install --with-deps chromium && exit 0
-          echo "::warning::First install attempt failed or stalled — retrying once"
-          timeout 420 npx playwright install --with-deps chromium
+          for i in 1 2 3; do
+            timeout 300 npx playwright install chromium && exit 0
+            echo "::warning::chromium download attempt $i failed or stalled — retrying"
+            sleep 10
+          done
+          echo "::error::chromium download failed after 3 attempts"
+          exit 1
 
       - name: Run E2E
         # playwright.config.ts boots its own production build (`npm run preview`)
