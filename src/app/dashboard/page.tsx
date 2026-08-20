@@ -33,13 +33,16 @@ export default async function Dashboard() {
       <div className="flex flex-1 flex-col items-center gap-8 px-4 pb-24">
         <div className="flex w-full max-w-xl items-end justify-between gap-4">
           <h1 className="text-5xl font-extrabold tracking-tight sm:text-6xl">
-            Dashboard
+            My Runs{" "}
+            <span aria-hidden="true" className="align-middle">
+              🏃
+            </span>
           </h1>
           <Link
             href="/activities/new"
             className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-accent-contrast transition hover:bg-accent/90"
           >
-            Log a run
+            Add Run
           </Link>
         </div>
 

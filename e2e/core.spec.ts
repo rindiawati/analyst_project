@@ -29,12 +29,10 @@ test("user can register, log in, and log a run", async ({ page }) => {
 
   // 3. Dashboard loaded for a user with no runs (Recent runs list was removed;
   //    verify the primary CTA is present instead of the old empty state).
-  await expect(
-    page.getByRole("link", { name: /log a run/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /add run/i })).toBeVisible();
 
   // 4. Log a run.
-  await page.getByRole("link", { name: /log a run/i }).click();
+  await page.getByRole("link", { name: /add run/i }).click();
   await expect(page).toHaveURL(/\/activities\/new/);
   await page.fill("[name=distance]", "5.2");
   await page.fill("[name=minutes]", "28");
