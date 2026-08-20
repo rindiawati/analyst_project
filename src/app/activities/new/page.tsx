@@ -11,7 +11,7 @@ export default async function NewActivityPage() {
       <AppHeader email={session?.user?.email} backHref="/dashboard" />
       <div className="flex flex-1 items-center justify-center px-4 pb-24">
         <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-surface p-8">
-          <h1 className="text-center text-3xl font-extrabold">Log a run</h1>
+          <h1 className="text-center text-3xl font-extrabold">Add Run</h1>
           <ActivityForm />
         </div>
       </div>
